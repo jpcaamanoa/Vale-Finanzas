@@ -76,6 +76,14 @@ const nextTransferInfo = (day) => {
 const STORAGE_KEY = "control-honorarios:data";
 const THEME_KEY = "control-honorarios:theme";
 
+const TABS = [
+  { id: "resumen", label: "Resumen" },
+  { id: "gastos", label: "Gastos y categorías" },
+  { id: "metas", label: "Metas" },
+  { id: "negocio", label: "Negocio" },
+  { id: "config", label: "Configuración" },
+];
+
 const DEFAULTS = {
   entries: [], // income: {id,date,patient,amount}
   otherIncome: [], // extra income not tied to work: {id,date,description,amount}
@@ -114,6 +122,7 @@ export default function ControlHonorarios() {
   const [loaded, setLoaded] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(monthKey(todayISO()));
+  const [activeTab, setActiveTab] = useState("resumen");
   const [theme, setTheme] = useState("light");
 
   // income form
@@ -881,488 +890,526 @@ export default function ControlHonorarios() {
       {pctOff && (
         <div style={styles.warnBanner}>
           <AlertTriangle size={14} strokeWidth={2} />
-          Tus porcentajes suman {totalPctSum.toFixed(1)}% en vez de 100%. Ajusta la tabla "Reparto automático" (a la derecha) — ahí están negocio, sueldo, margen y cada meta juntos.
+          Tus porcentajes suman {totalPctSum.toFixed(1)}% en vez de 100%. Ajusta la tabla "Reparto automático" — está en la pestaña "Configuración" — ahí están negocio, sueldo, margen y cada meta juntos.
         </div>
       )}
 
-      <div style={styles.mainGrid}>
+      <div style={styles.tabBar}>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            style={{ ...styles.tabBtn, ...(activeTab === t.id ? styles.tabBtnActive : {}) }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "resumen" && (
+        <div style={styles.mainGrid}>
+          <div>
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Registrar sesión pagada</h2>
+                      <div style={styles.formRow}>
+                        <input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} style={styles.input} />
+                        <input type="text" placeholder="Paciente (opcional)" value={fPatient} onChange={(e) => setFPatient(e.target.value)} style={{ ...styles.input, flex: 1.4 }} />
+                        <input type="number" placeholder="Monto" value={fAmount} onChange={(e) => setFAmount(e.target.value)} style={styles.input} />
+                        <button className="stamp-btn" onClick={addEntry} style={styles.addBtn}><Plus size={16} /> Agregar</button>
+                      </div>
+                      {weeklyAvg > 0 && (
+                        <p style={styles.avgNote}>Promedio semanal: <strong>{money(weeklyAvg)}</strong> · {weeks.length} {weeks.length === 1 ? "semana" : "semanas"} con ingresos</p>
+                      )}
+                    </section>
+
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Otros ingresos (no trabajo)</h2>
+                      <p style={styles.helpText}>Plata que entra pero no es de sesiones: regalos, reembolsos, ventas, etc. Se suma al total del mes igual que las sesiones, para que el reparto automático las incluya.</p>
+                      <div style={styles.formRow}>
+                        <input type="date" value={oDate} onChange={(e) => setODate(e.target.value)} style={styles.input} />
+                        <input type="text" placeholder="Descripción (ej: regalo, venta)" value={oDesc} onChange={(e) => setODesc(e.target.value)} style={{ ...styles.input, flex: 1.4 }} />
+                        <input type="number" placeholder="Monto" value={oAmount} onChange={(e) => setOAmount(e.target.value)} style={styles.input} />
+                        <button className="stamp-btn" onClick={addOtherIncome} style={styles.addBtn}><Plus size={16} /> Agregar</button>
+                      </div>
+                      {monthOtherIncome.length === 0 && <p style={{ ...styles.empty, marginTop: 10 }}>Sin otros ingresos este mes.</p>}
+                      {monthOtherIncome.map((item) => (
+                        <div key={item.id} className="row-item" style={styles.entryRow}>
+                          <span style={styles.entryDate}>{new Date(item.date + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })}</span>
+                          <span style={styles.entryPatient}>{item.description || "—"}</span>
+                          <span style={styles.entryAmount}>{money(item.amount)}</span>
+                          <button className="del-btn" onClick={() => removeOtherIncome(item.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
+                        </div>
+                      ))}
+                      {monthOtherIncome.length > 0 && (
+                        <div style={styles.expenseTotalRow}><span>Total otros ingresos del mes</span><span>{money(otherIncomeTotal)}</span></div>
+                      )}
+                    </section>
+
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Semana a semana — {monthLabel(selectedMonth)}</h2>
+                      {weeks.length === 0 && <p style={styles.empty}>Aún no hay ingresos este mes. Agrega arriba, o cambia de mes.</p>}
+                      {weeks.map(({ week, items, total }) => (
+                        <div key={week} style={styles.weekBlock}>
+                          <div style={styles.weekHeader}>
+                            <span style={styles.weekLabel}>Semana {fmtWeekLabel(week)}</span>
+                            <span style={styles.weekTotal}>{money(total)}</span>
+                          </div>
+                          {items.sort((a, b) => (a.date < b.date ? 1 : -1)).map((item) => (
+                            <div key={item.id} className="row-item" style={styles.entryRow}>
+                              <span style={styles.entryDate}>{new Date(item.date + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })}</span>
+                              <span style={styles.entryPatient}>{item.patient || "—"}</span>
+                              <span style={styles.entryAmount}>{money(item.amount)}</span>
+                              <button className="del-btn" onClick={() => removeEntry(item.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </section>
+          </div>
+          <div>
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Otros gastos</h2>
+                      <p style={styles.helpText}>Gastos variables que no son fijos ni de negocio: suscripciones, salidas, invitar a la familia, regalos, etc.</p>
+                      <div style={styles.formRow}>
+                        <input type="date" value={mDate} onChange={(e) => setMDate(e.target.value)} style={styles.input} />
+                        <input type="text" placeholder="Descripción (ej: Claude, comida familia)" value={mDesc} onChange={(e) => setMDesc(e.target.value)} style={{ ...styles.input, flex: 1.6 }} />
+                        <input type="number" placeholder="Monto" value={mAmount} onChange={(e) => setMAmount(e.target.value)} style={styles.input} />
+                        <button className="stamp-btn" onClick={addMisc} style={styles.addBtn}><Plus size={16} /> Agregar</button>
+                      </div>
+                      <div style={{ ...styles.formRow, marginTop: 8 }}>
+                        <label style={{ fontSize: 12, color: "var(--ink-2)", display: "flex", alignItems: "center", gap: 6 }}>
+                          Categoría
+                          <select
+                            value={mCategoryId || guessCategoryId(mDesc, data.categories) || ""}
+                            onChange={(e) => setMCategoryId(e.target.value)}
+                            style={{ ...styles.miniInput, minWidth: 160 }}
+                          >
+                            <option value="">Sin categoría</option>
+                            {data.categories.map((c) => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      {monthMiscExpenses.length === 0 && <p style={{ ...styles.empty, marginTop: 10 }}>Sin otros gastos registrados este mes.</p>}
+                      {monthMiscExpenses.map((m) => (
+                        <div key={m.id} className="row-item" style={styles.expenseRowWithCategory}>
+                          <span style={styles.entryDate}>{new Date(m.date + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })}</span>
+                          <span style={styles.entryPatient}>{m.description}</span>
+                          <select
+                            value={m.categoryId || ""}
+                            onChange={(e) => setMiscCategory(m.id, e.target.value)}
+                            style={styles.categoryMiniSelect}
+                          >
+                            <option value="">Sin categoría</option>
+                            {data.categories.map((c) => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                          <span style={styles.entryAmount}>{money(m.amount)}</span>
+                          <button className="del-btn" onClick={() => removeMisc(m.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
+                        </div>
+                      ))}
+                      {monthMiscExpenses.length > 0 && (
+                        <div style={styles.expenseTotalRow}><span>Total otros gastos del mes</span><span>{money(miscTotal)}</span></div>
+                      )}
+                      {categoryBreakdown.length > 0 && (
+                        <div style={{ marginTop: 14 }}>
+                          <div style={styles.categoryBreakdownTitle}>Gasto por categoría — {monthLabel(selectedMonth)}</div>
+                          {categoryBreakdown.map((c) => (
+                            <div key={c.label} style={styles.categoryBreakdownRow}>
+                              <span style={styles.categoryBreakdownLabel}>{c.label}</span>
+                              <div className="goal-bar-bg" style={{ flex: 1, height: 7 }}>
+                                <div
+                                  className="goal-bar-fill"
+                                  style={{ width: `${miscTotal > 0 ? (c.total / miscTotal) * 100 : 0}%`, background: "var(--brown)" }}
+                                />
+                              </div>
+                              <span style={styles.categoryBreakdownAmount}>{money(c.total)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Tendencia mensual</h2>
+                      <p style={styles.helpText}>Ingresos y ahorro destinado a metas, mes a mes (últimos {monthlyTrend.length > 1 ? monthlyTrend.length : ""} meses con datos).</p>
+                      {monthlyTrend.length === 0 ? (
+                        <p style={styles.empty}>Aún no hay suficientes datos para mostrar una tendencia.</p>
+                      ) : (
+                        <div style={{ width: "100%", height: 170 }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={monthlyTrend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barGap={3}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="var(--rule)" vertical={false} />
+                              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--ink-3)" }} axisLine={{ stroke: "var(--rule)" }} tickLine={false} />
+                              <YAxis tick={{ fontSize: 9, fill: "var(--ink-3)" }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
+                              <Tooltip
+                                formatter={(value, name) => [money(value), name === "ingresos" ? "Ingresos" : "Ahorro metas"]}
+                                labelFormatter={(label) => label}
+                                contentStyle={{ background: "var(--panel)", border: "1px solid var(--rule)", borderRadius: 6, fontSize: 12 }}
+                              />
+                              <Bar dataKey="ingresos" fill="var(--teal)" radius={[3, 3, 0, 0]} maxBarSize={22} />
+                              <Bar dataKey="ahorro" fill="var(--green)" radius={[3, 3, 0, 0]} maxBarSize={22} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                      <div style={styles.trendLegend}>
+                        <span style={styles.trendLegendItem}><span style={{ ...styles.trendDot, background: "var(--teal)" }} /> Ingresos</span>
+                        <span style={styles.trendLegendItem}><span style={{ ...styles.trendDot, background: "var(--green)" }} /> Ahorro metas</span>
+                      </div>
+                    </section>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "gastos" && (
+        <div style={styles.mainGrid}>
+          <div>
+                    <section style={styles.panel}>
+                      <div style={styles.panelHeaderRow}>
+                        <h2 style={styles.h2}><Tag size={15} style={{ verticalAlign: "-2px", marginRight: 6 }} />Categorías de gasto</h2>
+                        <button className="stamp-btn" onClick={() => setShowCategoryForm((s) => !s)} style={styles.smallAddBtn} aria-label="Agregar categoría">
+                          {showCategoryForm ? <X size={15} /> : <Plus size={15} />}
+                        </button>
+                      </div>
+                      <p style={styles.helpText}>Cada categoría tiene palabras clave: si el texto de un gasto (o de un movimiento de la cartola) contiene alguna, la app la sugiere sola. Tú puedes editarlas o corregir la categoría de cualquier gasto arriba.</p>
+                      {showCategoryForm && (
+                        <div style={styles.expenseForm}>
+                          <input type="text" placeholder="Nombre (ej: Mascotas)" value={catName} onChange={(e) => setCatName(e.target.value)} style={styles.input} />
+                          <input type="text" placeholder="Palabras clave, separadas por coma" value={catKeywords} onChange={(e) => setCatKeywords(e.target.value)} style={{ ...styles.input, flex: 1.6 }} />
+                          <button className="stamp-btn" onClick={addCategory} style={styles.addBtn}>Guardar</button>
+                        </div>
+                      )}
+                      {data.categories.map((c) => (
+                        <div key={c.id} className="row-item" style={styles.categoryRow}>
+                          <input type="text" value={c.name} onChange={(e) => updateCategoryName(c.id, e.target.value)} style={{ ...styles.miniInput, fontWeight: 600 }} />
+                          <input
+                            type="text"
+                            value={(c.keywords || []).join(", ")}
+                            onChange={(e) => updateCategoryKeywords(c.id, e.target.value)}
+                            placeholder="palabras clave separadas por coma"
+                            style={{ ...styles.miniInput, flex: 1 }}
+                          />
+                          <button className="del-btn" onClick={() => removeCategory(c.id)} style={styles.iconBtn} aria-label="Eliminar categoría"><Trash2 size={14} /></button>
+                        </div>
+                      ))}
+                    </section>
+          </div>
+          <div>
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}><Paperclip size={15} style={{ verticalAlign: "-2px", marginRight: 6 }} />Adjuntar cartola</h2>
+                      <p style={styles.helpText}>
+                        Sube el PDF de tu cartola del banco y la app intenta reconocer los movimientos (fecha, descripción y monto) y sugerir una categoría para cada uno. Es una lectura automática, no perfecta — revisa la lista antes de importar: puedes corregir, sacar filas, o descartar todo.
+                      </p>
+                      <div style={styles.formRow}>
+                        <label className="stamp-btn" style={{ ...styles.addBtn, cursor: "pointer" }}>
+                          <Paperclip size={15} /> {cartolaLoading ? "Leyendo…" : "Elegir PDF"}
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            onChange={(e) => handleCartolaFile(e.target.files && e.target.files[0])}
+                            style={{ display: "none" }}
+                            disabled={cartolaLoading}
+                          />
+                        </label>
+                      </div>
+                      {cartolaError && <p style={{ fontSize: 12.5, color: "var(--coral)", marginTop: 10 }}>{cartolaError}</p>}
+                      {cartolaRows.length > 0 && (
+                        <div style={{ marginTop: 14 }}>
+                          <p style={styles.helpText}>
+                            {cartolaRows.filter((r) => r.include).length} de {cartolaRows.length} movimientos seleccionados para importar a "Otros gastos".
+                          </p>
+                          <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--rule)", borderRadius: 8 }}>
+                            {cartolaRows.map((r) => (
+                              <div key={r.id} style={{ ...styles.cartolaRow, opacity: r.include ? 1 : 0.45 }}>
+                                <input type="checkbox" checked={r.include} onChange={() => toggleCartolaRow(r.id)} />
+                                <input type="date" value={r.date} onChange={(e) => updateCartolaRow(r.id, "date", e.target.value)} style={styles.miniInput} />
+                                <input
+                                  type="text"
+                                  value={r.description}
+                                  onChange={(e) => updateCartolaRow(r.id, "description", e.target.value)}
+                                  style={{ ...styles.miniInput, flex: 1 }}
+                                />
+                                <select
+                                  value={r.categoryId || ""}
+                                  onChange={(e) => updateCartolaRow(r.id, "categoryId", e.target.value)}
+                                  style={styles.categoryMiniSelect}
+                                >
+                                  <option value="">Sin categoría</option>
+                                  {data.categories.map((c) => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="number"
+                                  value={r.amount}
+                                  onChange={(e) => updateCartolaRow(r.id, "amount", e.target.value)}
+                                  style={{ ...styles.miniInput, width: 90, textAlign: "right" }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <div style={styles.formRow}>
+                            <button className="stamp-btn" onClick={importCartolaRows} style={{ ...styles.addBtn, marginTop: 10 }}>
+                              <Plus size={16} /> Importar seleccionados
+                            </button>
+                            <button onClick={discardCartolaRows} style={{ ...styles.cancelBtn, marginTop: 10 }}>Descartar todo</button>
+                          </div>
+                        </div>
+                      )}
+                    </section>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "metas" && (
         <div>
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Registrar sesión pagada</h2>
-            <div style={styles.formRow}>
-              <input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} style={styles.input} />
-              <input type="text" placeholder="Paciente (opcional)" value={fPatient} onChange={(e) => setFPatient(e.target.value)} style={{ ...styles.input, flex: 1.4 }} />
-              <input type="number" placeholder="Monto" value={fAmount} onChange={(e) => setFAmount(e.target.value)} style={styles.input} />
-              <button className="stamp-btn" onClick={addEntry} style={styles.addBtn}><Plus size={16} /> Agregar</button>
-            </div>
-            {weeklyAvg > 0 && (
-              <p style={styles.avgNote}>Promedio semanal: <strong>{money(weeklyAvg)}</strong> · {weeks.length} {weeks.length === 1 ? "semana" : "semanas"} con ingresos</p>
-            )}
-          </section>
-
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Otros ingresos (no trabajo)</h2>
-            <p style={styles.helpText}>Plata que entra pero no es de sesiones: regalos, reembolsos, ventas, etc. Se suma al total del mes igual que las sesiones, para que el reparto automático las incluya.</p>
-            <div style={styles.formRow}>
-              <input type="date" value={oDate} onChange={(e) => setODate(e.target.value)} style={styles.input} />
-              <input type="text" placeholder="Descripción (ej: regalo, venta)" value={oDesc} onChange={(e) => setODesc(e.target.value)} style={{ ...styles.input, flex: 1.4 }} />
-              <input type="number" placeholder="Monto" value={oAmount} onChange={(e) => setOAmount(e.target.value)} style={styles.input} />
-              <button className="stamp-btn" onClick={addOtherIncome} style={styles.addBtn}><Plus size={16} /> Agregar</button>
-            </div>
-            {monthOtherIncome.length === 0 && <p style={{ ...styles.empty, marginTop: 10 }}>Sin otros ingresos este mes.</p>}
-            {monthOtherIncome.map((item) => (
-              <div key={item.id} className="row-item" style={styles.entryRow}>
-                <span style={styles.entryDate}>{new Date(item.date + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })}</span>
-                <span style={styles.entryPatient}>{item.description || "—"}</span>
-                <span style={styles.entryAmount}>{money(item.amount)}</span>
-                <button className="del-btn" onClick={() => removeOtherIncome(item.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
-              </div>
-            ))}
-            {monthOtherIncome.length > 0 && (
-              <div style={styles.expenseTotalRow}><span>Total otros ingresos del mes</span><span>{money(otherIncomeTotal)}</span></div>
-            )}
-          </section>
-
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Semana a semana — {monthLabel(selectedMonth)}</h2>
-            {weeks.length === 0 && <p style={styles.empty}>Aún no hay ingresos este mes. Agrega arriba, o cambia de mes.</p>}
-            {weeks.map(({ week, items, total }) => (
-              <div key={week} style={styles.weekBlock}>
-                <div style={styles.weekHeader}>
-                  <span style={styles.weekLabel}>Semana {fmtWeekLabel(week)}</span>
-                  <span style={styles.weekTotal}>{money(total)}</span>
-                </div>
-                {items.sort((a, b) => (a.date < b.date ? 1 : -1)).map((item) => (
-                  <div key={item.id} className="row-item" style={styles.entryRow}>
-                    <span style={styles.entryDate}>{new Date(item.date + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })}</span>
-                    <span style={styles.entryPatient}>{item.patient || "—"}</span>
-                    <span style={styles.entryAmount}>{money(item.amount)}</span>
-                    <button className="del-btn" onClick={() => removeEntry(item.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </section>
-
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Registro de box</h2>
-            <p style={styles.helpText}>La tarifa varía según horario/lugar — pones las horas y el valor de esa hora, y calcula el monto solo.</p>
-            <div style={styles.formRow}>
-              <input type="date" value={bDate} onChange={(e) => setBDate(e.target.value)} style={styles.input} />
-              <input type="number" step="0.5" placeholder="Horas" value={bHours} onChange={(e) => setBHours(e.target.value)} style={{ ...styles.input, maxWidth: 80 }} />
-              <input type="number" placeholder="$/hora" value={bRate} onChange={(e) => setBRate(e.target.value)} style={{ ...styles.input, maxWidth: 100 }} />
-              <button className="stamp-btn" onClick={addBox} style={styles.addBtn}><Plus size={16} /> Agregar</button>
-            </div>
-            {monthBoxLog.length === 0 && <p style={{ ...styles.empty, marginTop: 10 }}>Sin pagos de box este mes.</p>}
-            {monthBoxLog.map((b) => (
-              <div key={b.id} className="row-item" style={styles.entryRow}>
-                <span style={styles.entryDate}>{new Date(b.date + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })}</span>
-                <span style={styles.entryPatient}>{b.hours}h × {money(b.rate)}</span>
-                <span style={styles.entryAmount}>{money(b.amount)}</span>
-                <button className="del-btn" onClick={() => removeBox(b.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
-              </div>
-            ))}
-            {monthBoxLog.length > 0 && (
-              <div style={styles.expenseTotalRow}><span>Total box del mes</span><span>{money(boxTotal)}</span></div>
-            )}
-          </section>
-
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Otros gastos</h2>
-            <p style={styles.helpText}>Gastos variables que no son fijos ni de negocio: suscripciones, salidas, invitar a la familia, regalos, etc.</p>
-            <div style={styles.formRow}>
-              <input type="date" value={mDate} onChange={(e) => setMDate(e.target.value)} style={styles.input} />
-              <input type="text" placeholder="Descripción (ej: Claude, comida familia)" value={mDesc} onChange={(e) => setMDesc(e.target.value)} style={{ ...styles.input, flex: 1.6 }} />
-              <input type="number" placeholder="Monto" value={mAmount} onChange={(e) => setMAmount(e.target.value)} style={styles.input} />
-              <button className="stamp-btn" onClick={addMisc} style={styles.addBtn}><Plus size={16} /> Agregar</button>
-            </div>
-            <div style={{ ...styles.formRow, marginTop: 8 }}>
-              <label style={{ fontSize: 12, color: "var(--ink-2)", display: "flex", alignItems: "center", gap: 6 }}>
-                Categoría
-                <select
-                  value={mCategoryId || guessCategoryId(mDesc, data.categories) || ""}
-                  onChange={(e) => setMCategoryId(e.target.value)}
-                  style={{ ...styles.miniInput, minWidth: 160 }}
-                >
-                  <option value="">Sin categoría</option>
-                  {data.categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {monthMiscExpenses.length === 0 && <p style={{ ...styles.empty, marginTop: 10 }}>Sin otros gastos registrados este mes.</p>}
-            {monthMiscExpenses.map((m) => (
-              <div key={m.id} className="row-item" style={styles.expenseRowWithCategory}>
-                <span style={styles.entryDate}>{new Date(m.date + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })}</span>
-                <span style={styles.entryPatient}>{m.description}</span>
-                <select
-                  value={m.categoryId || ""}
-                  onChange={(e) => setMiscCategory(m.id, e.target.value)}
-                  style={styles.categoryMiniSelect}
-                >
-                  <option value="">Sin categoría</option>
-                  {data.categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <span style={styles.entryAmount}>{money(m.amount)}</span>
-                <button className="del-btn" onClick={() => removeMisc(m.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
-              </div>
-            ))}
-            {monthMiscExpenses.length > 0 && (
-              <div style={styles.expenseTotalRow}><span>Total otros gastos del mes</span><span>{money(miscTotal)}</span></div>
-            )}
-            {categoryBreakdown.length > 0 && (
-              <div style={{ marginTop: 14 }}>
-                <div style={styles.categoryBreakdownTitle}>Gasto por categoría — {monthLabel(selectedMonth)}</div>
-                {categoryBreakdown.map((c) => (
-                  <div key={c.label} style={styles.categoryBreakdownRow}>
-                    <span style={styles.categoryBreakdownLabel}>{c.label}</span>
-                    <div className="goal-bar-bg" style={{ flex: 1, height: 7 }}>
-                      <div
-                        className="goal-bar-fill"
-                        style={{ width: `${miscTotal > 0 ? (c.total / miscTotal) * 100 : 0}%`, background: "var(--brown)" }}
-                      />
-                    </div>
-                    <span style={styles.categoryBreakdownAmount}>{money(c.total)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section style={styles.panel}>
-            <div style={styles.panelHeaderRow}>
-              <h2 style={styles.h2}><Tag size={15} style={{ verticalAlign: "-2px", marginRight: 6 }} />Categorías de gasto</h2>
-              <button className="stamp-btn" onClick={() => setShowCategoryForm((s) => !s)} style={styles.smallAddBtn} aria-label="Agregar categoría">
-                {showCategoryForm ? <X size={15} /> : <Plus size={15} />}
-              </button>
-            </div>
-            <p style={styles.helpText}>Cada categoría tiene palabras clave: si el texto de un gasto (o de un movimiento de la cartola) contiene alguna, la app la sugiere sola. Tú puedes editarlas o corregir la categoría de cualquier gasto arriba.</p>
-            {showCategoryForm && (
-              <div style={styles.expenseForm}>
-                <input type="text" placeholder="Nombre (ej: Mascotas)" value={catName} onChange={(e) => setCatName(e.target.value)} style={styles.input} />
-                <input type="text" placeholder="Palabras clave, separadas por coma" value={catKeywords} onChange={(e) => setCatKeywords(e.target.value)} style={{ ...styles.input, flex: 1.6 }} />
-                <button className="stamp-btn" onClick={addCategory} style={styles.addBtn}>Guardar</button>
-              </div>
-            )}
-            {data.categories.map((c) => (
-              <div key={c.id} className="row-item" style={styles.categoryRow}>
-                <input type="text" value={c.name} onChange={(e) => updateCategoryName(c.id, e.target.value)} style={{ ...styles.miniInput, fontWeight: 600 }} />
-                <input
-                  type="text"
-                  value={(c.keywords || []).join(", ")}
-                  onChange={(e) => updateCategoryKeywords(c.id, e.target.value)}
-                  placeholder="palabras clave separadas por coma"
-                  style={{ ...styles.miniInput, flex: 1 }}
-                />
-                <button className="del-btn" onClick={() => removeCategory(c.id)} style={styles.iconBtn} aria-label="Eliminar categoría"><Trash2 size={14} /></button>
-              </div>
-            ))}
-          </section>
-
-          <section style={styles.panel}>
-            <h2 style={styles.h2}><Paperclip size={15} style={{ verticalAlign: "-2px", marginRight: 6 }} />Adjuntar cartola</h2>
-            <p style={styles.helpText}>
-              Sube el PDF de tu cartola del banco y la app intenta reconocer los movimientos (fecha, descripción y monto) y sugerir una categoría para cada uno. Es una lectura automática, no perfecta — revisa la lista antes de importar: puedes corregir, sacar filas, o descartar todo.
-            </p>
-            <div style={styles.formRow}>
-              <label className="stamp-btn" style={{ ...styles.addBtn, cursor: "pointer" }}>
-                <Paperclip size={15} /> {cartolaLoading ? "Leyendo…" : "Elegir PDF"}
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) => handleCartolaFile(e.target.files && e.target.files[0])}
-                  style={{ display: "none" }}
-                  disabled={cartolaLoading}
-                />
-              </label>
-            </div>
-            {cartolaError && <p style={{ fontSize: 12.5, color: "var(--coral)", marginTop: 10 }}>{cartolaError}</p>}
-            {cartolaRows.length > 0 && (
-              <div style={{ marginTop: 14 }}>
-                <p style={styles.helpText}>
-                  {cartolaRows.filter((r) => r.include).length} de {cartolaRows.length} movimientos seleccionados para importar a "Otros gastos".
-                </p>
-                <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--rule)", borderRadius: 8 }}>
-                  {cartolaRows.map((r) => (
-                    <div key={r.id} style={{ ...styles.cartolaRow, opacity: r.include ? 1 : 0.45 }}>
-                      <input type="checkbox" checked={r.include} onChange={() => toggleCartolaRow(r.id)} />
-                      <input type="date" value={r.date} onChange={(e) => updateCartolaRow(r.id, "date", e.target.value)} style={styles.miniInput} />
-                      <input
-                        type="text"
-                        value={r.description}
-                        onChange={(e) => updateCartolaRow(r.id, "description", e.target.value)}
-                        style={{ ...styles.miniInput, flex: 1 }}
-                      />
-                      <select
-                        value={r.categoryId || ""}
-                        onChange={(e) => updateCartolaRow(r.id, "categoryId", e.target.value)}
-                        style={styles.categoryMiniSelect}
-                      >
-                        <option value="">Sin categoría</option>
-                        {data.categories.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
+                  <section style={styles.panel}>
+                    <h2 style={styles.h2}>Metas de ahorro (Fintual)</h2>
+                    <p style={styles.helpText}>
+                      "Meta de este mes" es lo que te corresponde transferir según todo lo que llevas ganado este mes. Cada vez que le hagas una transferencia real a Fintual, anota aquí cuánto depositaste — la app va restando eso de la meta y te dice cuánto falta.
+                    </p>
+                    <label style={{ ...styles.fieldLabel, maxWidth: 220 }}>
+                      Día del mes para transferir (opcional)
                       <input
                         type="number"
-                        value={r.amount}
-                        onChange={(e) => updateCartolaRow(r.id, "amount", e.target.value)}
-                        style={{ ...styles.miniInput, width: 90, textAlign: "right" }}
+                        min="1"
+                        max="31"
+                        placeholder="ej: 1"
+                        value={data.transferDay || ""}
+                        onChange={(e) => setTransferDay(e.target.value)}
+                        style={styles.input}
                       />
-                    </div>
-                  ))}
-                </div>
-                <div style={styles.formRow}>
-                  <button className="stamp-btn" onClick={importCartolaRows} style={{ ...styles.addBtn, marginTop: 10 }}>
-                    <Plus size={16} /> Importar seleccionados
-                  </button>
-                  <button onClick={discardCartolaRows} style={{ ...styles.cancelBtn, marginTop: 10 }}>Descartar todo</button>
-                </div>
-              </div>
-            )}
-          </section>
+                    </label>
+                    {data.goals.map((g) => {
+                      const accum = (afterTax * (g.pct || 0)) / 100;
+                      const applied = (g.sentByMonth && g.sentByMonth[selectedMonth]) || 0;
+                      const pending = Math.max(0, accum - applied);
+                      const pct = g.target > 0 ? clamp((g.current / g.target) * 100, 0, 100) : null;
+                      return (
+                        <div key={g.id} className="row-item" style={styles.goalBlock}>
+                          <div style={styles.goalTopRow}>
+                            <span style={styles.goalName}>{g.name}</span>
+                            <button className="del-btn" onClick={() => removeGoal(g.id)} style={styles.iconBtn} aria-label="Eliminar meta"><Trash2 size={14} /></button>
+                          </div>
+                          <div style={styles.goalFieldsRow}>
+                            <label style={styles.miniLabel}>% reparto (ver tabla →)
+                              <input type="number" step="0.1" value={g.pct} disabled style={{ ...styles.miniInput, color: "var(--ink-3)", background: "var(--paper-2)" }} />
+                            </label>
+                            <label style={styles.miniLabel}>Ahorrado total
+                              <input type="number" value={g.current} onChange={(e) => updateGoalField(g.id, "current", e.target.value)} style={styles.miniInput} />
+                            </label>
+                            <label style={styles.miniLabel}>Meta ($, opcional)
+                              <input type="number" value={g.target || ""} placeholder="—" onChange={(e) => updateGoalField(g.id, "target", e.target.value)} style={styles.miniInput} />
+                            </label>
+                          </div>
+                          <div style={styles.goalAccumRow}>
+                            <span>Meta de este mes: <strong>{money(accum)}</strong></span>
+                          </div>
+                          <div style={styles.goalAccumRow}>
+                            <span>Ya depositaste este mes:</span>
+                            <input
+                              type="number"
+                              value={applied || ""}
+                              placeholder="0"
+                              onChange={(e) => setMonthDeposit(g.id, selectedMonth, e.target.value)}
+                              style={{ ...styles.miniInput, width: 110, textAlign: "right" }}
+                              title="Corrige aquí si te equivocaste al anotar un depósito"
+                            />
+                          </div>
+                          <div style={styles.goalAccumRow}>
+                            <span>
+                              {pending > 0 ? (
+                                <>Falta: <strong style={{ color: "var(--coral)" }}>{money(pending)}</strong></>
+                              ) : (
+                                <strong style={{ color: "var(--green)" }}>Meta del mes completa ✓</strong>
+                              )}
+                            </span>
+                          </div>
+                          <div style={styles.formRow}>
+                            <input
+                              type="number"
+                              placeholder={`¿Cuánto depositaste? (ej: ${round(pending)})`}
+                              value={depositInputs[g.id] || ""}
+                              onChange={(e) => setDepositInput(g.id, e.target.value)}
+                              style={{ ...styles.miniInput, flex: 1 }}
+                            />
+                            <button
+                              className="stamp-btn"
+                              onClick={() => addDeposit(g.id)}
+                              style={{
+                                ...styles.applyBtnWide,
+                                opacity: parseFloat(depositInputs[g.id]) > 0 ? 1 : 0.5,
+                                cursor: parseFloat(depositInputs[g.id]) > 0 ? "pointer" : "not-allowed",
+                              }}
+                              disabled={!(parseFloat(depositInputs[g.id]) > 0)}
+                              title="Registra lo que ya depositaste este mes en Fintual"
+                            >
+                              <Plus size={12} /> Agregar depósito
+                            </button>
+                          </div>
+                          {pending > 0 && (
+                            <button
+                              onClick={() => applyAccumulated(g.id, pending, selectedMonth)}
+                              style={styles.linkBtn}
+                            >
+                              Ya deposité todo lo que falta ({money(pending)})
+                            </button>
+                          )}
+                          {pct !== null && (
+                            <div style={{ marginTop: 6 }}>
+                              <div className="goal-bar-bg"><div className="goal-bar-fill" style={{ width: `${pct}%`, background: "var(--green)" }} /></div>
+                              <span style={styles.goalPct}>{pct.toFixed(0)}% de {money(g.target)}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
 
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Metas de ahorro (Fintual)</h2>
-            <p style={styles.helpText}>
-              "Meta de este mes" es lo que te corresponde transferir según todo lo que llevas ganado este mes. Cada vez que le hagas una transferencia real a Fintual, anota aquí cuánto depositaste — la app va restando eso de la meta y te dice cuánto falta.
-            </p>
-            <label style={{ ...styles.fieldLabel, maxWidth: 220 }}>
-              Día del mes para transferir (opcional)
-              <input
-                type="number"
-                min="1"
-                max="31"
-                placeholder="ej: 1"
-                value={data.transferDay || ""}
-                onChange={(e) => setTransferDay(e.target.value)}
-                style={styles.input}
-              />
-            </label>
-            {data.goals.map((g) => {
-              const accum = (afterTax * (g.pct || 0)) / 100;
-              const applied = (g.sentByMonth && g.sentByMonth[selectedMonth]) || 0;
-              const pending = Math.max(0, accum - applied);
-              const pct = g.target > 0 ? clamp((g.current / g.target) * 100, 0, 100) : null;
-              return (
-                <div key={g.id} className="row-item" style={styles.goalBlock}>
-                  <div style={styles.goalTopRow}>
-                    <span style={styles.goalName}>{g.name}</span>
-                    <button className="del-btn" onClick={() => removeGoal(g.id)} style={styles.iconBtn} aria-label="Eliminar meta"><Trash2 size={14} /></button>
-                  </div>
-                  <div style={styles.goalFieldsRow}>
-                    <label style={styles.miniLabel}>% reparto (ver tabla →)
-                      <input type="number" step="0.1" value={g.pct} disabled style={{ ...styles.miniInput, color: "var(--ink-3)", background: "var(--paper-2)" }} />
-                    </label>
-                    <label style={styles.miniLabel}>Ahorrado total
-                      <input type="number" value={g.current} onChange={(e) => updateGoalField(g.id, "current", e.target.value)} style={styles.miniInput} />
-                    </label>
-                    <label style={styles.miniLabel}>Meta ($, opcional)
-                      <input type="number" value={g.target || ""} placeholder="—" onChange={(e) => updateGoalField(g.id, "target", e.target.value)} style={styles.miniInput} />
-                    </label>
-                  </div>
-                  <div style={styles.goalAccumRow}>
-                    <span>Meta de este mes: <strong>{money(accum)}</strong></span>
-                  </div>
-                  <div style={styles.goalAccumRow}>
-                    <span>Ya depositaste este mes:</span>
-                    <input
-                      type="number"
-                      value={applied || ""}
-                      placeholder="0"
-                      onChange={(e) => setMonthDeposit(g.id, selectedMonth, e.target.value)}
-                      style={{ ...styles.miniInput, width: 110, textAlign: "right" }}
-                      title="Corrige aquí si te equivocaste al anotar un depósito"
-                    />
-                  </div>
-                  <div style={styles.goalAccumRow}>
-                    <span>
-                      {pending > 0 ? (
-                        <>Falta: <strong style={{ color: "var(--coral)" }}>{money(pending)}</strong></>
-                      ) : (
-                        <strong style={{ color: "var(--green)" }}>Meta del mes completa ✓</strong>
+                    {!showGoalForm && <button className="stamp-btn" onClick={() => setShowGoalForm(true)} style={{ ...styles.addBtn, marginTop: 8 }}><Plus size={15} /> Agregar meta</button>}
+                    {showGoalForm && (
+                      <div style={styles.goalForm}>
+                        <input type="text" placeholder="Nombre" value={gName} onChange={(e) => setGName(e.target.value)} style={styles.input} />
+                        <input type="number" placeholder="Ahorrado" value={gCurrent} onChange={(e) => setGCurrent(e.target.value)} style={styles.input} />
+                        <input type="number" placeholder="Meta (opcional)" value={gTarget} onChange={(e) => setGTarget(e.target.value)} style={styles.input} />
+                        <input type="number" placeholder="% reparto" value={gPct} onChange={(e) => setGPct(e.target.value)} style={styles.input} />
+                        <button className="stamp-btn" onClick={addGoal} style={styles.addBtn}>Guardar</button>
+                        <button onClick={() => setShowGoalForm(false)} style={styles.cancelBtn}>Cancelar</button>
+                      </div>
+                    )}
+                  </section>
+        </div>
+      )}
+
+      {activeTab === "negocio" && (
+        <div style={styles.mainGrid}>
+          <div>
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Registro de box</h2>
+                      <p style={styles.helpText}>La tarifa varía según horario/lugar — pones las horas y el valor de esa hora, y calcula el monto solo.</p>
+                      <div style={styles.formRow}>
+                        <input type="date" value={bDate} onChange={(e) => setBDate(e.target.value)} style={styles.input} />
+                        <input type="number" step="0.5" placeholder="Horas" value={bHours} onChange={(e) => setBHours(e.target.value)} style={{ ...styles.input, maxWidth: 80 }} />
+                        <input type="number" placeholder="$/hora" value={bRate} onChange={(e) => setBRate(e.target.value)} style={{ ...styles.input, maxWidth: 100 }} />
+                        <button className="stamp-btn" onClick={addBox} style={styles.addBtn}><Plus size={16} /> Agregar</button>
+                      </div>
+                      {monthBoxLog.length === 0 && <p style={{ ...styles.empty, marginTop: 10 }}>Sin pagos de box este mes.</p>}
+                      {monthBoxLog.map((b) => (
+                        <div key={b.id} className="row-item" style={styles.entryRow}>
+                          <span style={styles.entryDate}>{new Date(b.date + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })}</span>
+                          <span style={styles.entryPatient}>{b.hours}h × {money(b.rate)}</span>
+                          <span style={styles.entryAmount}>{money(b.amount)}</span>
+                          <button className="del-btn" onClick={() => removeBox(b.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
+                        </div>
+                      ))}
+                      {monthBoxLog.length > 0 && (
+                        <div style={styles.expenseTotalRow}><span>Total box del mes</span><span>{money(boxTotal)}</span></div>
                       )}
-                    </span>
-                  </div>
-                  <div style={styles.formRow}>
-                    <input
-                      type="number"
-                      placeholder={`¿Cuánto depositaste? (ej: ${round(pending)})`}
-                      value={depositInputs[g.id] || ""}
-                      onChange={(e) => setDepositInput(g.id, e.target.value)}
-                      style={{ ...styles.miniInput, flex: 1 }}
-                    />
-                    <button
-                      className="stamp-btn"
-                      onClick={() => addDeposit(g.id)}
-                      style={{
-                        ...styles.applyBtnWide,
-                        opacity: parseFloat(depositInputs[g.id]) > 0 ? 1 : 0.5,
-                        cursor: parseFloat(depositInputs[g.id]) > 0 ? "pointer" : "not-allowed",
-                      }}
-                      disabled={!(parseFloat(depositInputs[g.id]) > 0)}
-                      title="Registra lo que ya depositaste este mes en Fintual"
-                    >
-                      <Plus size={12} /> Agregar depósito
-                    </button>
-                  </div>
-                  {pending > 0 && (
-                    <button
-                      onClick={() => applyAccumulated(g.id, pending, selectedMonth)}
-                      style={styles.linkBtn}
-                    >
-                      Ya deposité todo lo que falta ({money(pending)})
-                    </button>
-                  )}
-                  {pct !== null && (
-                    <div style={{ marginTop: 6 }}>
-                      <div className="goal-bar-bg"><div className="goal-bar-fill" style={{ width: `${pct}%`, background: "var(--green)" }} /></div>
-                      <span style={styles.goalPct}>{pct.toFixed(0)}% de {money(g.target)}</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    </section>
 
-            {!showGoalForm && <button className="stamp-btn" onClick={() => setShowGoalForm(true)} style={{ ...styles.addBtn, marginTop: 8 }}><Plus size={15} /> Agregar meta</button>}
-            {showGoalForm && (
-              <div style={styles.goalForm}>
-                <input type="text" placeholder="Nombre" value={gName} onChange={(e) => setGName(e.target.value)} style={styles.input} />
-                <input type="number" placeholder="Ahorrado" value={gCurrent} onChange={(e) => setGCurrent(e.target.value)} style={styles.input} />
-                <input type="number" placeholder="Meta (opcional)" value={gTarget} onChange={(e) => setGTarget(e.target.value)} style={styles.input} />
-                <input type="number" placeholder="% reparto" value={gPct} onChange={(e) => setGPct(e.target.value)} style={styles.input} />
-                <button className="stamp-btn" onClick={addGoal} style={styles.addBtn}>Guardar</button>
-                <button onClick={() => setShowGoalForm(false)} style={styles.cancelBtn}>Cancelar</button>
-              </div>
-            )}
-          </section>
+                    <section style={styles.panel}>
+                      <div style={styles.panelHeaderRow}>
+                        <h2 style={styles.h2}>Gastos fijos de negocio</h2>
+                        <button className="stamp-btn" onClick={() => setShowFixedForm((s) => !s)} style={styles.smallAddBtn} aria-label="Agregar gasto">
+                          {showFixedForm ? <X size={15} /> : <Plus size={15} />}
+                        </button>
+                      </div>
+                      {showFixedForm && (
+                        <div style={styles.expenseForm}>
+                          <input type="text" placeholder="Nombre" value={xName} onChange={(e) => setXName(e.target.value)} style={styles.input} />
+                          <input type="number" placeholder="Monto" value={xAmount} onChange={(e) => setXAmount(e.target.value)} style={{ ...styles.input, width: 100 }} />
+                          <button className="stamp-btn" onClick={addFixed} style={styles.addBtn}>Guardar</button>
+                        </div>
+                      )}
+                      {data.fixedBusiness.map((exp) => (
+                        <div key={exp.id} className="row-item" style={styles.expenseRow}>
+                          <span style={styles.entryPatient}>{exp.name}</span>
+                          <input type="number" value={exp.amount} onChange={(e) => updateFixedAmount(exp.id, e.target.value)} style={styles.expenseInput} />
+                          <button className="del-btn" onClick={() => removeFixed(exp.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
+                        </div>
+                      ))}
+                      <div style={styles.expenseTotalRow}><span>Total fijos</span><span>{money(fixedTotal)}</span></div>
+                    </section>
+          </div>
+          <div>
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Negocio: calculado vs. real</h2>
+                      <div style={styles.compareRow}><span>Apartado por % este mes</span><span>{money(businessAccum)}</span></div>
+                      <div style={styles.compareRow}><span>Gasto real (box + fijos)</span><span>{money(actualBusiness)}</span></div>
+                      <div style={{ ...styles.expenseTotalRow, color: businessAccum - actualBusiness >= 0 ? "var(--green)" : "var(--coral)" }}>
+                        <span>{businessAccum - actualBusiness >= 0 ? "Te sobra" : "Te falta"}</span>
+                        <span>{money(Math.abs(businessAccum - actualBusiness))}</span>
+                      </div>
+                    </section>
+          </div>
         </div>
+      )}
 
-        <div>
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Tendencia mensual</h2>
-            <p style={styles.helpText}>Ingresos y ahorro destinado a metas, mes a mes (últimos {monthlyTrend.length > 1 ? monthlyTrend.length : ""} meses con datos).</p>
-            {monthlyTrend.length === 0 ? (
-              <p style={styles.empty}>Aún no hay suficientes datos para mostrar una tendencia.</p>
-            ) : (
-              <div style={{ width: "100%", height: 170 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyTrend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barGap={3}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--rule)" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--ink-3)" }} axisLine={{ stroke: "var(--rule)" }} tickLine={false} />
-                    <YAxis tick={{ fontSize: 9, fill: "var(--ink-3)" }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
-                    <Tooltip
-                      formatter={(value, name) => [money(value), name === "ingresos" ? "Ingresos" : "Ahorro metas"]}
-                      labelFormatter={(label) => label}
-                      contentStyle={{ background: "var(--panel)", border: "1px solid var(--rule)", borderRadius: 6, fontSize: 12 }}
-                    />
-                    <Bar dataKey="ingresos" fill="var(--teal)" radius={[3, 3, 0, 0]} maxBarSize={22} />
-                    <Bar dataKey="ahorro" fill="var(--green)" radius={[3, 3, 0, 0]} maxBarSize={22} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            <div style={styles.trendLegend}>
-              <span style={styles.trendLegendItem}><span style={{ ...styles.trendDot, background: "var(--teal)" }} /> Ingresos</span>
-              <span style={styles.trendLegendItem}><span style={{ ...styles.trendDot, background: "var(--green)" }} /> Ahorro metas</span>
-            </div>
-          </section>
+      {activeTab === "config" && (
+        <div style={styles.mainGrid}>
+          <div>
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Reparto automático — todo en un solo lugar</h2>
+                      <p style={styles.helpText}>
+                        Impuestos sale del ingreso bruto. Todo lo demás (negocio, sueldo, margen, y cada meta) se reparte del ingreso después de impuestos — por eso deben sumar 100% entre todas las filas de abajo, ahorros incluidos.
+                      </p>
 
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Reparto automático — todo en un solo lugar</h2>
-            <p style={styles.helpText}>
-              Impuestos sale del ingreso bruto. Todo lo demás (negocio, sueldo, margen, y cada meta) se reparte del ingreso después de impuestos — por eso deben sumar 100% entre todas las filas de abajo, ahorros incluidos.
-            </p>
+                      <div style={styles.allocTable}>
+                        <div style={styles.allocRow}>
+                          <span style={styles.allocLabel}>Impuestos <em>(% del bruto)</em></span>
+                          <input type="number" step="0.5" value={data.taxRate} onChange={(e) => setTaxRate(e.target.value)} style={styles.allocInput} />
+                        </div>
+                        <div style={styles.allocDivider}>Después de impuestos ({money(afterTax)} este mes) →</div>
+                        <div style={styles.allocRow}>
+                          <span style={styles.allocLabel}>Negocio</span>
+                          <input type="number" step="0.1" value={data.businessPct} onChange={(e) => setBusinessPct(e.target.value)} style={styles.allocInput} />
+                        </div>
+                        <div style={styles.allocRow}>
+                          <span style={styles.allocLabel}>Sueldo</span>
+                          <input type="number" step="0.1" value={data.salaryPct} onChange={(e) => setSalaryPct(e.target.value)} style={styles.allocInput} />
+                        </div>
+                        <div style={styles.allocRow}>
+                          <span style={styles.allocLabel}>Margen / colchón</span>
+                          <input type="number" step="0.1" value={data.marginPct} onChange={(e) => setMarginPct(e.target.value)} style={styles.allocInput} />
+                        </div>
+                        {data.goals.map((g) => (
+                          <div key={g.id} style={styles.allocRow}>
+                            <span style={styles.allocLabel}>💰 {g.name}</span>
+                            <input type="number" step="0.1" value={g.pct} onChange={(e) => updateGoalField(g.id, "pct", e.target.value)} style={styles.allocInput} />
+                          </div>
+                        ))}
+                      </div>
 
-            <div style={styles.allocTable}>
-              <div style={styles.allocRow}>
-                <span style={styles.allocLabel}>Impuestos <em>(% del bruto)</em></span>
-                <input type="number" step="0.5" value={data.taxRate} onChange={(e) => setTaxRate(e.target.value)} style={styles.allocInput} />
-              </div>
-              <div style={styles.allocDivider}>Después de impuestos ({money(afterTax)} este mes) →</div>
-              <div style={styles.allocRow}>
-                <span style={styles.allocLabel}>Negocio</span>
-                <input type="number" step="0.1" value={data.businessPct} onChange={(e) => setBusinessPct(e.target.value)} style={styles.allocInput} />
-              </div>
-              <div style={styles.allocRow}>
-                <span style={styles.allocLabel}>Sueldo</span>
-                <input type="number" step="0.1" value={data.salaryPct} onChange={(e) => setSalaryPct(e.target.value)} style={styles.allocInput} />
-              </div>
-              <div style={styles.allocRow}>
-                <span style={styles.allocLabel}>Margen / colchón</span>
-                <input type="number" step="0.1" value={data.marginPct} onChange={(e) => setMarginPct(e.target.value)} style={styles.allocInput} />
-              </div>
-              {data.goals.map((g) => (
-                <div key={g.id} style={styles.allocRow}>
-                  <span style={styles.allocLabel}>💰 {g.name}</span>
-                  <input type="number" step="0.1" value={g.pct} onChange={(e) => updateGoalField(g.id, "pct", e.target.value)} style={styles.allocInput} />
-                </div>
-              ))}
-            </div>
+                      <div style={{ ...styles.expenseTotalRow, color: pctOff ? "var(--coral)" : "var(--green)" }}>
+                        <span>Suma total (debe dar 100%)</span>
+                        <span>{totalPctSum.toFixed(1)}%</span>
+                      </div>
+                    </section>
+          </div>
+          <div>
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Buffer mínimo — cuenta corriente</h2>
+                      <p style={styles.helpText}>El piso que nunca tocas en tu cuenta corriente, aparte de Fintual. Liquidez para semanas flojas.</p>
+                      <label style={styles.fieldLabel}>Buffer objetivo
+                        <input type="number" value={data.bufferTarget} onChange={(e) => setBufferTarget(e.target.value)} style={styles.input} />
+                      </label>
+                    </section>
 
-            <div style={{ ...styles.expenseTotalRow, color: pctOff ? "var(--coral)" : "var(--green)" }}>
-              <span>Suma total (debe dar 100%)</span>
-              <span>{totalPctSum.toFixed(1)}%</span>
-            </div>
-          </section>
-
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Negocio: calculado vs. real</h2>
-            <div style={styles.compareRow}><span>Apartado por % este mes</span><span>{money(businessAccum)}</span></div>
-            <div style={styles.compareRow}><span>Gasto real (box + fijos)</span><span>{money(actualBusiness)}</span></div>
-            <div style={{ ...styles.expenseTotalRow, color: businessAccum - actualBusiness >= 0 ? "var(--green)" : "var(--coral)" }}>
-              <span>{businessAccum - actualBusiness >= 0 ? "Te sobra" : "Te falta"}</span>
-              <span>{money(Math.abs(businessAccum - actualBusiness))}</span>
-            </div>
-          </section>
-
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Sueldo: apartado vs. gastado</h2>
-            <p style={styles.helpText}>Compara lo que el reparto automático te asigna de sueldo con lo que realmente has gastado (otros gastos de esta página).</p>
-            <div style={styles.compareRow}><span>Apartado por % este mes</span><span>{money(salaryAccum)}</span></div>
-            <div style={styles.compareRow}><span>Gastado (otros gastos)</span><span>{money(miscTotal)}</span></div>
-            <div style={{ ...styles.expenseTotalRow, color: salaryAccum - miscTotal >= 0 ? "var(--green)" : "var(--coral)" }}>
-              <span>{salaryAccum - miscTotal >= 0 ? "Te sobra" : "Te pasaste"}</span>
-              <span>{money(Math.abs(salaryAccum - miscTotal))}</span>
-            </div>
-          </section>
-
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Buffer mínimo — cuenta corriente</h2>
-            <p style={styles.helpText}>El piso que nunca tocas en tu cuenta corriente, aparte de Fintual. Liquidez para semanas flojas.</p>
-            <label style={styles.fieldLabel}>Buffer objetivo
-              <input type="number" value={data.bufferTarget} onChange={(e) => setBufferTarget(e.target.value)} style={styles.input} />
-            </label>
-          </section>
-
-          <section style={styles.panel}>
-            <div style={styles.panelHeaderRow}>
-              <h2 style={styles.h2}>Gastos fijos de negocio</h2>
-              <button className="stamp-btn" onClick={() => setShowFixedForm((s) => !s)} style={styles.smallAddBtn} aria-label="Agregar gasto">
-                {showFixedForm ? <X size={15} /> : <Plus size={15} />}
-              </button>
-            </div>
-            {showFixedForm && (
-              <div style={styles.expenseForm}>
-                <input type="text" placeholder="Nombre" value={xName} onChange={(e) => setXName(e.target.value)} style={styles.input} />
-                <input type="number" placeholder="Monto" value={xAmount} onChange={(e) => setXAmount(e.target.value)} style={{ ...styles.input, width: 100 }} />
-                <button className="stamp-btn" onClick={addFixed} style={styles.addBtn}>Guardar</button>
-              </div>
-            )}
-            {data.fixedBusiness.map((exp) => (
-              <div key={exp.id} className="row-item" style={styles.expenseRow}>
-                <span style={styles.entryPatient}>{exp.name}</span>
-                <input type="number" value={exp.amount} onChange={(e) => updateFixedAmount(exp.id, e.target.value)} style={styles.expenseInput} />
-                <button className="del-btn" onClick={() => removeFixed(exp.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
-              </div>
-            ))}
-            <div style={styles.expenseTotalRow}><span>Total fijos</span><span>{money(fixedTotal)}</span></div>
-          </section>
+                    <section style={styles.panel}>
+                      <h2 style={styles.h2}>Sueldo: apartado vs. gastado</h2>
+                      <p style={styles.helpText}>Compara lo que el reparto automático te asigna de sueldo con lo que realmente has gastado (otros gastos de esta página).</p>
+                      <div style={styles.compareRow}><span>Apartado por % este mes</span><span>{money(salaryAccum)}</span></div>
+                      <div style={styles.compareRow}><span>Gastado (otros gastos)</span><span>{money(miscTotal)}</span></div>
+                      <div style={{ ...styles.expenseTotalRow, color: salaryAccum - miscTotal >= 0 ? "var(--green)" : "var(--coral)" }}>
+                        <span>{salaryAccum - miscTotal >= 0 ? "Te sobra" : "Te pasaste"}</span>
+                        <span>{money(Math.abs(salaryAccum - miscTotal))}</span>
+                      </div>
+                    </section>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -1394,6 +1441,9 @@ const styles = {
   transferBadge: { fontSize: 12, color: "var(--ink-2)", background: "var(--paper-2)", padding: "5px 10px", borderRadius: 20, fontWeight: 500 },
   monthSelect: { fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 600, background: "transparent", border: "none", borderBottom: "2px solid var(--teal)", padding: "4px 4px 6px", color: "var(--teal)", cursor: "pointer" },
   cardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 18 },
+  tabBar: { display: "flex", gap: 4, marginBottom: 18, borderBottom: "1.5px solid var(--rule)", overflowX: "auto" },
+  tabBtn: { background: "none", border: "none", borderBottom: "2.5px solid transparent", padding: "9px 14px", fontSize: 13.5, fontWeight: 600, color: "var(--ink-2)", cursor: "pointer", whiteSpace: "nowrap" },
+  tabBtnActive: { color: "var(--teal)", borderBottom: "2.5px solid var(--teal)" },
   fintualBanner: { background: "var(--panel)", borderRadius: 10, padding: "14px 16px", marginBottom: 18, boxShadow: "0 1px 3px var(--shadow)" },
   fintualBannerHeader: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 },
   fintualBannerTitle: { fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 15, color: "var(--teal)" },
