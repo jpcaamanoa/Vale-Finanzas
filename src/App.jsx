@@ -126,6 +126,13 @@ export default function ControlHonorarios() {
   const [selectedMonth, setSelectedMonth] = useState(monthKey(todayISO()));
   const [activeTab, setActiveTab] = useState("resumen");
   const [theme, setTheme] = useState("light");
+  const [toastMsg, setToastMsg] = useState("");
+  const toastTimerRef = React.useRef(null);
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMsg(""), 2800);
+  };
 
   // income form
   const [fDate, setFDate] = useState(todayISO());
@@ -465,6 +472,21 @@ export default function ControlHonorarios() {
     persist({ ...data, miscExpenses: [...data.miscExpenses, ...toImport] });
     setCartolaRows([]);
     setCartolaError("");
+  };
+  const sendCartolaRowToFixed = (id) => {
+    const row = cartolaRows.find((r) => r.id === id);
+    if (!row) return;
+    const name = (row.description || "").trim() || "Gasto de negocio";
+    const amount = parseFloat(row.amount) || 0;
+    const existing = data.fixedBusiness.find((fx) => fx.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      persist({ ...data, fixedBusiness: data.fixedBusiness.map((fx) => (fx.id === existing.id ? { ...fx, amount } : fx)) });
+      showToast(`Actualizado "${existing.name}" en Gastos fijos: ${money(amount)}`);
+    } else {
+      persist({ ...data, fixedBusiness: [...data.fixedBusiness, { id: `fx${Date.now()}`, name, amount }] });
+      showToast(`Enviado a Gastos fijos: ${name} — ${money(amount)}`);
+    }
+    setCartolaRows((rows) => rows.filter((r) => r.id !== id));
   };
 
   // ---------- fixed business ----------
@@ -1160,12 +1182,17 @@ export default function ControlHonorarios() {
                                     style={{ ...styles.miniInput, width: 90, textAlign: "right" }}
                                   />
                                 </div>
-                                {r.possibleDuplicate && (
-                                  <div style={styles.duplicateBadge}>
-                                    ⚠ Posible duplicado — ya registrado a mano el{" "}
-                                    {new Date(r.duplicateDate + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric" })}
-                                  </div>
-                                )}
+                                <div style={styles.cartolaRowFooter}>
+                                  {r.possibleDuplicate ? (
+                                    <div style={styles.duplicateBadge}>
+                                      ⚠ Posible duplicado — ya registrado a mano el{" "}
+                                      {new Date(r.duplicateDate + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                                    </div>
+                                  ) : <span />}
+                                  <button type="button" onClick={() => sendCartolaRowToFixed(r.id)} style={styles.sendToFixedBtn}>
+                                    <Building2 size={11} /> Enviar a Gastos fijos de negocio
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -1428,6 +1455,7 @@ export default function ControlHonorarios() {
           </div>
         </div>
       )}
+      {toastMsg && <div style={styles.toast}>{toastMsg}</div>}
     </div>
   );
 }
@@ -1505,7 +1533,23 @@ const styles = {
   categoryRow: { display: "flex", alignItems: "center", gap: 8, padding: "6px 6px", borderRadius: 6, marginBottom: 4 },
   cartolaRowOuter: { padding: "6px 8px", borderBottom: "1px solid var(--rule)" },
   cartolaRow: { display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 },
-  duplicateBadge: { marginTop: 4, marginLeft: 26, fontSize: 11, color: "var(--coral)", fontWeight: 600 },
+  cartolaRowFooter: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, marginLeft: 26, gap: 8, flexWrap: "wrap" },
+  duplicateBadge: { fontSize: 11, color: "var(--coral)", fontWeight: 600 },
+  sendToFixedBtn: { display: "flex", alignItems: "center", gap: 4, background: "none", border: "1px solid var(--rule)", borderRadius: 6, padding: "2px 8px", fontSize: 10.5, color: "var(--ink-2)", cursor: "pointer", whiteSpace: "nowrap" },
+  toast: {
+    position: "fixed",
+    bottom: 24,
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: "var(--ink)",
+    color: "var(--paper)",
+    padding: "10px 18px",
+    borderRadius: 999,
+    fontSize: 13,
+    fontWeight: 600,
+    boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+    zIndex: 1000,
+  },
   expenseTotalRow: { display: "flex", justifyContent: "space-between", borderTop: "1.5px solid var(--rule)", marginTop: 6, paddingTop: 8, fontWeight: 700, fontSize: 13.5, color: "var(--teal)" },
   compareRow: { display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--ink-2)", padding: "4px 0" },
   allocTable: { display: "flex", flexDirection: "column", gap: 2 },
