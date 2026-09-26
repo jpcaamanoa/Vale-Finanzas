@@ -137,6 +137,10 @@ export default function ControlHonorarios() {
   const [gTarget, setGTarget] = useState("");
   const [gPct, setGPct] = useState("");
 
+  // per-goal "how much did I just deposit" inputs, keyed by goal id
+  const [depositInputs, setDepositInputs] = useState({});
+  const setDepositInput = (id, val) => setDepositInputs((prev) => ({ ...prev, [id]: val }));
+
   useEffect(() => {
     (async () => {
       try {
@@ -403,6 +407,12 @@ export default function ControlHonorarios() {
         return { ...g, current: g.current + amount, sentByMonth };
       }),
     });
+  };
+  const addDeposit = (id) => {
+    const amount = parseFloat(depositInputs[id]);
+    if (!amount || amount <= 0) return;
+    applyAccumulated(id, amount, selectedMonth);
+    setDepositInput(id, "");
   };
 
   // ---------- derived: month scope ----------
@@ -815,7 +825,7 @@ export default function ControlHonorarios() {
           <section style={styles.panel}>
             <h2 style={styles.h2}>Metas de ahorro (Fintual)</h2>
             <p style={styles.helpText}>
-              "Acumulado del mes" es lo que te corresponde según todo lo que llevas ganado este mes. "Pendiente por transferir" es lo nuevo desde la última vez que apretaste "Sumar a Fintual". No necesitas revisar esto seguido: elige un día del mes y transfiere todo lo pendiente ese día — el resto del tiempo puedes ignorar esta sección tranquilo.
+              "Meta de este mes" es lo que te corresponde transferir según todo lo que llevas ganado este mes. Cada vez que le hagas una transferencia real a Fintual, anota aquí cuánto depositaste — la app va restando eso de la meta y te dice cuánto falta.
             </p>
             <label style={{ ...styles.fieldLabel, maxWidth: 220 }}>
               Día del mes para transferir (opcional)
@@ -852,23 +862,52 @@ export default function ControlHonorarios() {
                     </label>
                   </div>
                   <div style={styles.goalAccumRow}>
+                    <span>Meta de este mes: <strong>{money(accum)}</strong></span>
+                  </div>
+                  {applied > 0 && (
+                    <div style={styles.goalAccumRow}>
+                      <span>Ya depositaste este mes: <strong style={{ color: "var(--green)" }}>{money(applied)}</strong></span>
+                    </div>
+                  )}
+                  <div style={styles.goalAccumRow}>
                     <span>
-                      Acumulado del mes: <strong>{money(accum)}</strong>
-                      {applied > 0 && <span style={{ color: "var(--ink-3)" }}> · ya transferido {money(applied)}</span>}
+                      {pending > 0 ? (
+                        <>Falta: <strong style={{ color: "var(--coral)" }}>{money(pending)}</strong></>
+                      ) : (
+                        <strong style={{ color: "var(--green)" }}>Meta del mes completa ✓</strong>
+                      )}
                     </span>
                   </div>
-                  <div style={styles.goalAccumRow}>
-                    <span>Pendiente por transferir: <strong style={{ color: pending > 0 ? "var(--green)" : "var(--ink-3)" }}>{money(pending)}</strong></span>
+                  <div style={styles.formRow}>
+                    <input
+                      type="number"
+                      placeholder={`¿Cuánto depositaste? (ej: ${round(pending)})`}
+                      value={depositInputs[g.id] || ""}
+                      onChange={(e) => setDepositInput(g.id, e.target.value)}
+                      style={{ ...styles.miniInput, flex: 1 }}
+                    />
                     <button
                       className="stamp-btn"
-                      onClick={() => applyAccumulated(g.id, pending, selectedMonth)}
-                      style={{ ...styles.applyBtnWide, opacity: pending > 0 ? 1 : 0.5, cursor: pending > 0 ? "pointer" : "not-allowed" }}
-                      disabled={pending <= 0}
-                      title="Sumar solo lo pendiente a lo ahorrado"
+                      onClick={() => addDeposit(g.id)}
+                      style={{
+                        ...styles.applyBtnWide,
+                        opacity: parseFloat(depositInputs[g.id]) > 0 ? 1 : 0.5,
+                        cursor: parseFloat(depositInputs[g.id]) > 0 ? "pointer" : "not-allowed",
+                      }}
+                      disabled={!(parseFloat(depositInputs[g.id]) > 0)}
+                      title="Registra lo que ya depositaste este mes en Fintual"
                     >
-                      <Plus size={12} /> Sumar a Fintual
+                      <Plus size={12} /> Agregar depósito
                     </button>
                   </div>
+                  {pending > 0 && (
+                    <button
+                      onClick={() => applyAccumulated(g.id, pending, selectedMonth)}
+                      style={styles.linkBtn}
+                    >
+                      Ya deposité todo lo que falta ({money(pending)})
+                    </button>
+                  )}
                   {pct !== null && (
                     <div style={{ marginTop: 6 }}>
                       <div className="goal-bar-bg"><div className="goal-bar-fill" style={{ width: `${pct}%`, background: "var(--green)" }} /></div>
@@ -1091,6 +1130,7 @@ const styles = {
   goalAccumRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontSize: 12.5, color: "var(--ink)" },
   applyBtnWide: { display: "flex", alignItems: "center", gap: 4, background: "var(--green)", color: "#fff", border: "none", borderRadius: 6, padding: "5px 9px", fontSize: 11.5, fontWeight: 600, cursor: "pointer" },
   goalPct: { fontSize: 11, color: "var(--ink-2)" },
+  linkBtn: { background: "none", border: "none", color: "var(--teal)", fontSize: 11.5, fontWeight: 600, cursor: "pointer", padding: "6px 0 0", textDecoration: "underline", textAlign: "left" },
   goalForm: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, marginBottom: 10 },
   trendWrap: { display: "flex", alignItems: "flex-end", gap: 8, height: 130, marginTop: 4 },
   trendBarGroup: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 },
