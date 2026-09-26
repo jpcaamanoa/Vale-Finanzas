@@ -13,9 +13,12 @@ import {
   Building2,
   AlertTriangle,
   Gift,
+  Paperclip,
+  Tag,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { extractLinesFromPdf, parseTransactions, guessCategoryId } from "./lib/cartola";
 
 // ---------- helpers ----------
 const money = (n) =>
@@ -77,7 +80,15 @@ const DEFAULTS = {
   entries: [], // income: {id,date,patient,amount}
   otherIncome: [], // extra income not tied to work: {id,date,description,amount}
   boxLog: [], // {id,date,hours,rate,amount}
-  miscExpenses: [], // {id,date,description,amount}
+  miscExpenses: [], // {id,date,description,amount,categoryId}
+  categories: [
+    { id: "cat1", name: "Comida", keywords: ["restaurant", "supermercado", "jumbo", "lider", "santa isabel", "tottus", "unimarc", "rappi", "pedidosya", "starbucks"] },
+    { id: "cat2", name: "Transporte", keywords: ["uber", "cabify", "didi", "copec", "shell", "petrobras", "metro", "bip"] },
+    { id: "cat3", name: "Salud", keywords: ["farmacia", "cruz verde", "salcobrand", "ahumada", "clinica", "isapre", "fonasa"] },
+    { id: "cat4", name: "Hogar y cuentas", keywords: ["luz", "agua", "gas", "internet", "movistar", "entel", "wom", "vtr", "gtd"] },
+    { id: "cat5", name: "Entretención", keywords: ["netflix", "spotify", "hbo", "disney", "cine", "amazon prime"] },
+    { id: "cat6", name: "Otros", keywords: [] },
+  ],
   fixedBusiness: [
     { id: "f1", name: "Publicidad Instagram", amount: 0 },
     { id: "f2", name: "F29 SII", amount: 0 },
@@ -124,6 +135,17 @@ export default function ControlHonorarios() {
   const [mDate, setMDate] = useState(todayISO());
   const [mDesc, setMDesc] = useState("");
   const [mAmount, setMAmount] = useState("");
+  const [mCategoryId, setMCategoryId] = useState(""); // "" = let the app guess from the description
+
+  // category management form
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
+  const [catName, setCatName] = useState("");
+  const [catKeywords, setCatKeywords] = useState("");
+
+  // cartola (bank statement PDF) import
+  const [cartolaRows, setCartolaRows] = useState([]); // review rows before import
+  const [cartolaLoading, setCartolaLoading] = useState(false);
+  const [cartolaError, setCartolaError] = useState("");
 
   // fixed business form
   const [showFixedForm, setShowFixedForm] = useState(false);
@@ -342,12 +364,89 @@ export default function ControlHonorarios() {
   const addMisc = () => {
     const amt = parseFloat(mAmount);
     if (!amt || amt <= 0 || !mDate || !mDesc.trim()) return;
-    const entry = { id: `m${Date.now()}`, date: mDate, description: mDesc.trim(), amount: amt };
+    const categoryId = mCategoryId || guessCategoryId(mDesc, data.categories) || "";
+    const entry = { id: `m${Date.now()}`, date: mDate, description: mDesc.trim(), amount: amt, categoryId };
     persist({ ...data, miscExpenses: [...data.miscExpenses, entry] });
     setMDesc("");
     setMAmount("");
+    setMCategoryId("");
   };
   const removeMisc = (id) => persist({ ...data, miscExpenses: data.miscExpenses.filter((e) => e.id !== id) });
+  const setMiscCategory = (id, categoryId) =>
+    persist({ ...data, miscExpenses: data.miscExpenses.map((e) => (e.id === id ? { ...e, categoryId } : e)) });
+
+  // ---------- expense categories ----------
+  const addCategory = () => {
+    if (!catName.trim()) return;
+    const keywords = catKeywords
+      .split(",")
+      .map((k) => k.trim().toLowerCase())
+      .filter(Boolean);
+    persist({ ...data, categories: [...data.categories, { id: `cat${Date.now()}`, name: catName.trim(), keywords }] });
+    setCatName("");
+    setCatKeywords("");
+    setShowCategoryForm(false);
+  };
+  const removeCategory = (id) => persist({ ...data, categories: data.categories.filter((c) => c.id !== id) });
+  const updateCategoryName = (id, name) =>
+    persist({ ...data, categories: data.categories.map((c) => (c.id === id ? { ...c, name } : c)) });
+  const updateCategoryKeywords = (id, text) => {
+    const keywords = text
+      .split(",")
+      .map((k) => k.trim().toLowerCase())
+      .filter(Boolean);
+    persist({ ...data, categories: data.categories.map((c) => (c.id === id ? { ...c, keywords } : c)) });
+  };
+
+  // ---------- cartola (bank statement PDF) import ----------
+  const handleCartolaFile = async (file) => {
+    if (!file) return;
+    setCartolaLoading(true);
+    setCartolaError("");
+    try {
+      const lines = await extractLinesFromPdf(file);
+      const parsed = parseTransactions(lines);
+      const rows = parsed.map((r, i) => ({
+        id: `cr${Date.now()}_${i}`,
+        include: true,
+        date: r.date,
+        description: r.description,
+        amount: r.amount,
+        categoryId: guessCategoryId(r.description, data.categories) || "",
+      }));
+      if (!rows.length) {
+        setCartolaError("No encontré movimientos con el formato esperado (fecha + monto) en este PDF. Puedes seguir agregando los gastos a mano.");
+      }
+      setCartolaRows(rows);
+    } catch (e) {
+      setCartolaError("No se pudo leer este PDF. Puede que sea una imagen escaneada (sin texto seleccionable) en vez de un PDF con texto.");
+    } finally {
+      setCartolaLoading(false);
+    }
+  };
+  const updateCartolaRow = (id, field, val) =>
+    setCartolaRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: val } : r)));
+  const toggleCartolaRow = (id) =>
+    setCartolaRows((rows) => rows.map((r) => (r.id === id ? { ...r, include: !r.include } : r)));
+  const discardCartolaRows = () => {
+    setCartolaRows([]);
+    setCartolaError("");
+  };
+  const importCartolaRows = () => {
+    const toImport = cartolaRows
+      .filter((r) => r.include && r.date && parseFloat(r.amount) > 0)
+      .map((r, i) => ({
+        id: `mc${Date.now()}_${i}`,
+        date: r.date,
+        description: (r.description || "").trim() || "—",
+        amount: parseFloat(r.amount),
+        categoryId: r.categoryId || "",
+      }));
+    if (!toImport.length) return;
+    persist({ ...data, miscExpenses: [...data.miscExpenses, ...toImport] });
+    setCartolaRows([]);
+    setCartolaError("");
+  };
 
   // ---------- fixed business ----------
   const addFixed = () => {
@@ -463,6 +562,17 @@ export default function ControlHonorarios() {
     [data.miscExpenses, selectedMonth]
   );
   const miscTotal = useMemo(() => monthMiscExpenses.reduce((s, e) => s + e.amount, 0), [monthMiscExpenses]);
+  const categoryBreakdown = useMemo(() => {
+    const byCat = new Map();
+    monthMiscExpenses.forEach((e) => {
+      const cat = data.categories.find((c) => c.id === e.categoryId);
+      const key = cat ? cat.id : "uncategorized";
+      const label = cat ? cat.name : "Sin categoría";
+      const prev = byCat.get(key) || { label, total: 0 };
+      byCat.set(key, { label, total: prev.total + e.amount });
+    });
+    return Array.from(byCat.values()).sort((a, b) => b.total - a.total);
+  }, [monthMiscExpenses, data.categories]);
   const fixedTotal = useMemo(() => data.fixedBusiness.reduce((s, e) => s + e.amount, 0), [data.fixedBusiness]);
   const actualBusiness = boxTotal + fixedTotal;
 
@@ -552,9 +662,23 @@ export default function ControlHonorarios() {
     rows.push(["", "", "Total box", boxTotalM]);
     rows.push([]);
     rows.push(["Otros gastos"]);
-    rows.push(["Fecha", "Descripción", "Monto"]);
-    miscM.forEach((e) => rows.push([e.date, e.description, e.amount]));
-    rows.push(["", "Total otros gastos", miscTotalM]);
+    rows.push(["Fecha", "Descripción", "Categoría", "Monto"]);
+    miscM.forEach((e) => {
+      const cat = data.categories.find((c) => c.id === e.categoryId);
+      rows.push([e.date, e.description, cat ? cat.name : "Sin categoría", e.amount]);
+    });
+    rows.push(["", "", "Total otros gastos", miscTotalM]);
+    rows.push([]);
+    rows.push(["Gasto por categoría"]);
+    const byCat = new Map();
+    miscM.forEach((e) => {
+      const cat = data.categories.find((c) => c.id === e.categoryId);
+      const label = cat ? cat.name : "Sin categoría";
+      byCat.set(label, (byCat.get(label) || 0) + e.amount);
+    });
+    Array.from(byCat.entries())
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([label, total]) => rows.push([label, total]));
     rows.push([]);
     rows.push(["Resumen del mes"]);
     rows.push(["Ingresos totales", totalM]);
@@ -852,17 +976,152 @@ export default function ControlHonorarios() {
               <input type="number" placeholder="Monto" value={mAmount} onChange={(e) => setMAmount(e.target.value)} style={styles.input} />
               <button className="stamp-btn" onClick={addMisc} style={styles.addBtn}><Plus size={16} /> Agregar</button>
             </div>
+            <div style={{ ...styles.formRow, marginTop: 8 }}>
+              <label style={{ fontSize: 12, color: "var(--ink-2)", display: "flex", alignItems: "center", gap: 6 }}>
+                Categoría
+                <select
+                  value={mCategoryId || guessCategoryId(mDesc, data.categories) || ""}
+                  onChange={(e) => setMCategoryId(e.target.value)}
+                  style={{ ...styles.miniInput, minWidth: 160 }}
+                >
+                  <option value="">Sin categoría</option>
+                  {data.categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             {monthMiscExpenses.length === 0 && <p style={{ ...styles.empty, marginTop: 10 }}>Sin otros gastos registrados este mes.</p>}
             {monthMiscExpenses.map((m) => (
-              <div key={m.id} className="row-item" style={styles.entryRow}>
+              <div key={m.id} className="row-item" style={styles.expenseRowWithCategory}>
                 <span style={styles.entryDate}>{new Date(m.date + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })}</span>
                 <span style={styles.entryPatient}>{m.description}</span>
+                <select
+                  value={m.categoryId || ""}
+                  onChange={(e) => setMiscCategory(m.id, e.target.value)}
+                  style={styles.categoryMiniSelect}
+                >
+                  <option value="">Sin categoría</option>
+                  {data.categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
                 <span style={styles.entryAmount}>{money(m.amount)}</span>
                 <button className="del-btn" onClick={() => removeMisc(m.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
               </div>
             ))}
             {monthMiscExpenses.length > 0 && (
               <div style={styles.expenseTotalRow}><span>Total otros gastos del mes</span><span>{money(miscTotal)}</span></div>
+            )}
+            {categoryBreakdown.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={styles.categoryBreakdownTitle}>Gasto por categoría — {monthLabel(selectedMonth)}</div>
+                {categoryBreakdown.map((c) => (
+                  <div key={c.label} style={styles.categoryBreakdownRow}>
+                    <span style={styles.categoryBreakdownLabel}>{c.label}</span>
+                    <div className="goal-bar-bg" style={{ flex: 1, height: 7 }}>
+                      <div
+                        className="goal-bar-fill"
+                        style={{ width: `${miscTotal > 0 ? (c.total / miscTotal) * 100 : 0}%`, background: "var(--brown)" }}
+                      />
+                    </div>
+                    <span style={styles.categoryBreakdownAmount}>{money(c.total)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section style={styles.panel}>
+            <div style={styles.panelHeaderRow}>
+              <h2 style={styles.h2}><Tag size={15} style={{ verticalAlign: "-2px", marginRight: 6 }} />Categorías de gasto</h2>
+              <button className="stamp-btn" onClick={() => setShowCategoryForm((s) => !s)} style={styles.smallAddBtn} aria-label="Agregar categoría">
+                {showCategoryForm ? <X size={15} /> : <Plus size={15} />}
+              </button>
+            </div>
+            <p style={styles.helpText}>Cada categoría tiene palabras clave: si el texto de un gasto (o de un movimiento de la cartola) contiene alguna, la app la sugiere sola. Tú puedes editarlas o corregir la categoría de cualquier gasto arriba.</p>
+            {showCategoryForm && (
+              <div style={styles.expenseForm}>
+                <input type="text" placeholder="Nombre (ej: Mascotas)" value={catName} onChange={(e) => setCatName(e.target.value)} style={styles.input} />
+                <input type="text" placeholder="Palabras clave, separadas por coma" value={catKeywords} onChange={(e) => setCatKeywords(e.target.value)} style={{ ...styles.input, flex: 1.6 }} />
+                <button className="stamp-btn" onClick={addCategory} style={styles.addBtn}>Guardar</button>
+              </div>
+            )}
+            {data.categories.map((c) => (
+              <div key={c.id} className="row-item" style={styles.categoryRow}>
+                <input type="text" value={c.name} onChange={(e) => updateCategoryName(c.id, e.target.value)} style={{ ...styles.miniInput, fontWeight: 600 }} />
+                <input
+                  type="text"
+                  value={(c.keywords || []).join(", ")}
+                  onChange={(e) => updateCategoryKeywords(c.id, e.target.value)}
+                  placeholder="palabras clave separadas por coma"
+                  style={{ ...styles.miniInput, flex: 1 }}
+                />
+                <button className="del-btn" onClick={() => removeCategory(c.id)} style={styles.iconBtn} aria-label="Eliminar categoría"><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </section>
+
+          <section style={styles.panel}>
+            <h2 style={styles.h2}><Paperclip size={15} style={{ verticalAlign: "-2px", marginRight: 6 }} />Adjuntar cartola</h2>
+            <p style={styles.helpText}>
+              Sube el PDF de tu cartola del banco y la app intenta reconocer los movimientos (fecha, descripción y monto) y sugerir una categoría para cada uno. Es una lectura automática, no perfecta — revisa la lista antes de importar: puedes corregir, sacar filas, o descartar todo.
+            </p>
+            <div style={styles.formRow}>
+              <label className="stamp-btn" style={{ ...styles.addBtn, cursor: "pointer" }}>
+                <Paperclip size={15} /> {cartolaLoading ? "Leyendo…" : "Elegir PDF"}
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => handleCartolaFile(e.target.files && e.target.files[0])}
+                  style={{ display: "none" }}
+                  disabled={cartolaLoading}
+                />
+              </label>
+            </div>
+            {cartolaError && <p style={{ fontSize: 12.5, color: "var(--coral)", marginTop: 10 }}>{cartolaError}</p>}
+            {cartolaRows.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <p style={styles.helpText}>
+                  {cartolaRows.filter((r) => r.include).length} de {cartolaRows.length} movimientos seleccionados para importar a "Otros gastos".
+                </p>
+                <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--rule)", borderRadius: 8 }}>
+                  {cartolaRows.map((r) => (
+                    <div key={r.id} style={{ ...styles.cartolaRow, opacity: r.include ? 1 : 0.45 }}>
+                      <input type="checkbox" checked={r.include} onChange={() => toggleCartolaRow(r.id)} />
+                      <input type="date" value={r.date} onChange={(e) => updateCartolaRow(r.id, "date", e.target.value)} style={styles.miniInput} />
+                      <input
+                        type="text"
+                        value={r.description}
+                        onChange={(e) => updateCartolaRow(r.id, "description", e.target.value)}
+                        style={{ ...styles.miniInput, flex: 1 }}
+                      />
+                      <select
+                        value={r.categoryId || ""}
+                        onChange={(e) => updateCartolaRow(r.id, "categoryId", e.target.value)}
+                        style={styles.categoryMiniSelect}
+                      >
+                        <option value="">Sin categoría</option>
+                        {data.categories.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        value={r.amount}
+                        onChange={(e) => updateCartolaRow(r.id, "amount", e.target.value)}
+                        style={{ ...styles.miniInput, width: 90, textAlign: "right" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div style={styles.formRow}>
+                  <button className="stamp-btn" onClick={importCartolaRows} style={{ ...styles.addBtn, marginTop: 10 }}>
+                    <Plus size={16} /> Importar seleccionados
+                  </button>
+                  <button onClick={discardCartolaRows} style={{ ...styles.cancelBtn, marginTop: 10 }}>Descartar todo</button>
+                </div>
+              </div>
             )}
           </section>
 
@@ -1169,6 +1428,14 @@ const styles = {
   expenseForm: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" },
   expenseRow: { display: "grid", gridTemplateColumns: "1fr 90px 24px", alignItems: "center", gap: 8, padding: "7px 6px", borderRadius: 6, fontSize: 13.5 },
   expenseInput: { fontFamily: "'Inter', sans-serif", fontSize: 13, padding: "5px 7px", borderRadius: 6, border: "1px solid var(--rule)", background: "var(--input-bg)", color: "var(--ink)", textAlign: "right", width: 90 },
+  expenseRowWithCategory: { display: "grid", gridTemplateColumns: "44px 1fr 130px auto 24px", alignItems: "center", gap: 8, padding: "6px 6px", borderRadius: 6, fontSize: 13.5 },
+  categoryMiniSelect: { fontFamily: "'Inter', sans-serif", fontSize: 11.5, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--rule)", background: "var(--input-bg)", color: "var(--ink-2)" },
+  categoryBreakdownTitle: { fontSize: 11.5, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 8 },
+  categoryBreakdownRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 7, fontSize: 12.5 },
+  categoryBreakdownLabel: { width: 120, flexShrink: 0, color: "var(--ink)" },
+  categoryBreakdownAmount: { width: 90, flexShrink: 0, textAlign: "right", fontWeight: 600, color: "var(--ink)" },
+  categoryRow: { display: "flex", alignItems: "center", gap: 8, padding: "6px 6px", borderRadius: 6, marginBottom: 4 },
+  cartolaRow: { display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderBottom: "1px solid var(--rule)", fontSize: 12.5 },
   expenseTotalRow: { display: "flex", justifyContent: "space-between", borderTop: "1.5px solid var(--rule)", marginTop: 6, paddingTop: 8, fontWeight: 700, fontSize: 13.5, color: "var(--teal)" },
   compareRow: { display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--ink-2)", padding: "4px 0" },
   allocTable: { display: "flex", flexDirection: "column", gap: 2 },
