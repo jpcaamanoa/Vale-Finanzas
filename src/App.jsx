@@ -474,6 +474,18 @@ export default function ControlHonorarios() {
   const pctOff = Math.abs(100 - totalPctSum) > 0.5;
   const transferInfo = useMemo(() => nextTransferInfo(data.transferDay), [data.transferDay]);
 
+  // ---------- Fintual progress: across every goal, for the selected month ----------
+  const fintualTargetTotal = useMemo(
+    () => data.goals.reduce((s, g) => s + (afterTax * (g.pct || 0)) / 100, 0),
+    [data.goals, afterTax]
+  );
+  const fintualDepositedTotal = useMemo(
+    () => data.goals.reduce((s, g) => s + ((g.sentByMonth && g.sentByMonth[selectedMonth]) || 0), 0),
+    [data.goals, selectedMonth]
+  );
+  const fintualPendingTotal = Math.max(0, fintualTargetTotal - fintualDepositedTotal);
+  const fintualPct = fintualTargetTotal > 0 ? clamp((fintualDepositedTotal / fintualTargetTotal) * 100, 0, 100) : 0;
+
   const monthlyTrend = useMemo(() => {
     const monthSet = new Set([...data.entries, ...data.otherIncome].map((e) => monthKey(e.date)));
     monthSet.add(selectedMonth);
@@ -724,6 +736,22 @@ export default function ControlHonorarios() {
         <SummaryCard icon={<Building2 size={16} />} label={`Negocio (${data.businessPct}%)`} value={money(businessAccum)} accent="var(--brown)" />
         <SummaryCard icon={<Landmark size={16} />} label={`Sueldo (${data.salaryPct}%) · gastado ${money(miscTotal)}`} value={money(salaryAccum)} accent="var(--blue)" />
         <SummaryCard icon={<Target size={16} />} label="Metas (acumulado)" value={money(afterTax - businessAccum - salaryAccum - marginAccum)} accent="var(--green)" big />
+      </div>
+
+      <div style={styles.fintualBanner}>
+        <div style={styles.fintualBannerHeader}>
+          <span style={styles.fintualBannerTitle}>Fintual — {monthLabel(selectedMonth)}</span>
+          <span style={{ ...styles.fintualBannerPct, color: fintualPct >= 100 ? "var(--green)" : "var(--teal)" }}>{fintualPct.toFixed(0)}%</span>
+        </div>
+        <div className="goal-bar-bg" style={{ height: 8 }}>
+          <div className="goal-bar-fill" style={{ width: `${fintualPct}%` }} />
+        </div>
+        <div style={styles.fintualBannerRow}>
+          <span>Depositado: <strong>{money(fintualDepositedTotal)}</strong> de {money(fintualTargetTotal)}</span>
+          <span style={{ fontWeight: 700, color: fintualPendingTotal > 0 ? "var(--coral)" : "var(--green)" }}>
+            {fintualPendingTotal > 0 ? `Falta ${money(fintualPendingTotal)}` : "Completo ✓"}
+          </span>
+        </div>
       </div>
 
       {pctOff && (
@@ -1107,6 +1135,11 @@ const styles = {
   transferBadge: { fontSize: 12, color: "var(--ink-2)", background: "var(--paper-2)", padding: "5px 10px", borderRadius: 20, fontWeight: 500 },
   monthSelect: { fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 600, background: "transparent", border: "none", borderBottom: "2px solid var(--teal)", padding: "4px 4px 6px", color: "var(--teal)", cursor: "pointer" },
   cardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 18 },
+  fintualBanner: { background: "var(--panel)", borderRadius: 10, padding: "14px 16px", marginBottom: 18, boxShadow: "0 1px 3px var(--shadow)" },
+  fintualBannerHeader: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 },
+  fintualBannerTitle: { fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 15, color: "var(--teal)" },
+  fintualBannerPct: { fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 18 },
+  fintualBannerRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontSize: 12.5, color: "var(--ink-2)", flexWrap: "wrap", gap: 6 },
   summaryCard: { background: "var(--panel)", borderRadius: 10, padding: "13px 14px 15px", boxShadow: "0 1px 3px var(--shadow)" },
   summaryIcon: { marginBottom: 8 },
   summaryLabel: { fontSize: 10.5, color: "var(--ink-2)", marginBottom: 4, fontWeight: 500 },
