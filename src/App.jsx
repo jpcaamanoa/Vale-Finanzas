@@ -978,6 +978,35 @@ export default function ControlHonorarios() {
           </div>
           <div>
                     <section style={styles.panel}>
+                      <h2 style={styles.h2}>Tendencia mensual</h2>
+                      <p style={styles.helpText}>Ingresos y ahorro destinado a metas, mes a mes (últimos {monthlyTrend.length > 1 ? monthlyTrend.length : ""} meses con datos).</p>
+                      {monthlyTrend.length === 0 ? (
+                        <p style={styles.empty}>Aún no hay suficientes datos para mostrar una tendencia.</p>
+                      ) : (
+                        <div style={{ width: "100%", height: 170 }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={monthlyTrend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barGap={3}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="var(--rule)" vertical={false} />
+                              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--ink-3)" }} axisLine={{ stroke: "var(--rule)" }} tickLine={false} />
+                              <YAxis tick={{ fontSize: 9, fill: "var(--ink-3)" }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
+                              <Tooltip
+                                formatter={(value, name) => [money(value), name === "ingresos" ? "Ingresos" : "Ahorro metas"]}
+                                labelFormatter={(label) => label}
+                                contentStyle={{ background: "var(--panel)", border: "1px solid var(--rule)", borderRadius: 6, fontSize: 12 }}
+                              />
+                              <Bar dataKey="ingresos" fill="var(--teal)" radius={[3, 3, 0, 0]} maxBarSize={22} />
+                              <Bar dataKey="ahorro" fill="var(--green)" radius={[3, 3, 0, 0]} maxBarSize={22} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                      <div style={styles.trendLegend}>
+                        <span style={styles.trendLegendItem}><span style={{ ...styles.trendDot, background: "var(--teal)" }} /> Ingresos</span>
+                        <span style={styles.trendLegendItem}><span style={{ ...styles.trendDot, background: "var(--green)" }} /> Ahorro metas</span>
+                      </div>
+                    </section>
+
+                    <section style={styles.panel}>
                       <h2 style={styles.h2}>Otros gastos</h2>
                       <p style={styles.helpText}>Gastos variables que no son fijos ni de negocio: suscripciones, salidas, invitar a la familia, regalos, etc.</p>
                       <div style={styles.formRow}>
@@ -1040,35 +1069,6 @@ export default function ControlHonorarios() {
                           ))}
                         </div>
                       )}
-                    </section>
-
-                    <section style={styles.panel}>
-                      <h2 style={styles.h2}>Tendencia mensual</h2>
-                      <p style={styles.helpText}>Ingresos y ahorro destinado a metas, mes a mes (últimos {monthlyTrend.length > 1 ? monthlyTrend.length : ""} meses con datos).</p>
-                      {monthlyTrend.length === 0 ? (
-                        <p style={styles.empty}>Aún no hay suficientes datos para mostrar una tendencia.</p>
-                      ) : (
-                        <div style={{ width: "100%", height: 170 }}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyTrend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barGap={3}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="var(--rule)" vertical={false} />
-                              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--ink-3)" }} axisLine={{ stroke: "var(--rule)" }} tickLine={false} />
-                              <YAxis tick={{ fontSize: 9, fill: "var(--ink-3)" }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
-                              <Tooltip
-                                formatter={(value, name) => [money(value), name === "ingresos" ? "Ingresos" : "Ahorro metas"]}
-                                labelFormatter={(label) => label}
-                                contentStyle={{ background: "var(--panel)", border: "1px solid var(--rule)", borderRadius: 6, fontSize: 12 }}
-                              />
-                              <Bar dataKey="ingresos" fill="var(--teal)" radius={[3, 3, 0, 0]} maxBarSize={22} />
-                              <Bar dataKey="ahorro" fill="var(--green)" radius={[3, 3, 0, 0]} maxBarSize={22} />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      )}
-                      <div style={styles.trendLegend}>
-                        <span style={styles.trendLegendItem}><span style={{ ...styles.trendDot, background: "var(--teal)" }} /> Ingresos</span>
-                        <span style={styles.trendLegendItem}><span style={{ ...styles.trendDot, background: "var(--green)" }} /> Ahorro metas</span>
-                      </div>
                     </section>
           </div>
         </div>
