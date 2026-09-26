@@ -38,6 +38,8 @@ const weekKey = (isoDate) => {
 
 const monthKey = (isoDate) => isoDate.slice(0, 7);
 
+const daysBetween = (isoA, isoB) => Math.abs((new Date(isoA + "T00:00:00") - new Date(isoB + "T00:00:00")) / 86400000);
+
 const fmtWeekLabel = (mondayISO) => {
   const start = new Date(mondayISO + "T00:00:00");
   const end = new Date(start);
@@ -415,14 +417,22 @@ export default function ControlHonorarios() {
     try {
       const lines = await extractLinesFromPdf(file);
       const parsed = parseTransactions(lines);
-      const rows = parsed.map((r, i) => ({
-        id: `cr${Date.now()}_${i}`,
-        include: true,
-        date: r.date,
-        description: r.description,
-        amount: r.amount,
-        categoryId: guessCategoryId(r.description, data.categories) || "",
-      }));
+      const rows = parsed.map((r, i) => {
+        // Flag as a possible duplicate when a manually-entered "Otros gastos" row has the
+        // exact same amount within ±2 days (to cover the lag between paying and the bank
+        // posting the charge) — never assume, just default it unchecked for review.
+        const dup = data.miscExpenses.find((e) => e.amount === r.amount && daysBetween(e.date, r.date) <= 2);
+        return {
+          id: `cr${Date.now()}_${i}`,
+          include: !dup,
+          date: r.date,
+          description: r.description,
+          amount: r.amount,
+          categoryId: guessCategoryId(r.description, data.categories) || "",
+          possibleDuplicate: !!dup,
+          duplicateDate: dup ? dup.date : null,
+        };
+      });
       if (!rows.length) {
         setCartolaError("No encontré movimientos con el formato esperado (fecha + monto) en este PDF. Puedes seguir agregando los gastos a mano.");
       }
@@ -877,7 +887,7 @@ export default function ControlHonorarios() {
           <span style={{ ...styles.fintualBannerPct, color: fintualPct >= 100 ? "var(--green)" : "var(--teal)" }}>{fintualPct.toFixed(0)}%</span>
         </div>
         <div className="goal-bar-bg" style={{ height: 8 }}>
-          <div className="goal-bar-fill" style={{ width: `${fintualPct}%` }} />
+          <div className="goal-bar-fill" style={{ width: `${fintualPct}%`, background: fintualPct >= 100 ? "var(--green)" : "var(--teal)" }} />
         </div>
         <div style={styles.fintualBannerRow}>
           <span>Depositado: <strong>{money(fintualDepositedTotal)}</strong> de {money(fintualTargetTotal)}</span>
@@ -1123,31 +1133,39 @@ export default function ControlHonorarios() {
                           </p>
                           <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--rule)", borderRadius: 8 }}>
                             {cartolaRows.map((r) => (
-                              <div key={r.id} style={{ ...styles.cartolaRow, opacity: r.include ? 1 : 0.45 }}>
-                                <input type="checkbox" checked={r.include} onChange={() => toggleCartolaRow(r.id)} />
-                                <input type="date" value={r.date} onChange={(e) => updateCartolaRow(r.id, "date", e.target.value)} style={styles.miniInput} />
-                                <input
-                                  type="text"
-                                  value={r.description}
-                                  onChange={(e) => updateCartolaRow(r.id, "description", e.target.value)}
-                                  style={{ ...styles.miniInput, flex: 1 }}
-                                />
-                                <select
-                                  value={r.categoryId || ""}
-                                  onChange={(e) => updateCartolaRow(r.id, "categoryId", e.target.value)}
-                                  style={styles.categoryMiniSelect}
-                                >
-                                  <option value="">Sin categoría</option>
-                                  {data.categories.map((c) => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                  ))}
-                                </select>
-                                <input
-                                  type="number"
-                                  value={r.amount}
-                                  onChange={(e) => updateCartolaRow(r.id, "amount", e.target.value)}
-                                  style={{ ...styles.miniInput, width: 90, textAlign: "right" }}
-                                />
+                              <div key={r.id} style={{ ...styles.cartolaRowOuter, opacity: r.include ? 1 : 0.5 }}>
+                                <div style={styles.cartolaRow}>
+                                  <input type="checkbox" checked={r.include} onChange={() => toggleCartolaRow(r.id)} />
+                                  <input type="date" value={r.date} onChange={(e) => updateCartolaRow(r.id, "date", e.target.value)} style={styles.miniInput} />
+                                  <input
+                                    type="text"
+                                    value={r.description}
+                                    onChange={(e) => updateCartolaRow(r.id, "description", e.target.value)}
+                                    style={{ ...styles.miniInput, flex: 1, ...(r.possibleDuplicate ? { fontStyle: "italic" } : {}) }}
+                                  />
+                                  <select
+                                    value={r.categoryId || ""}
+                                    onChange={(e) => updateCartolaRow(r.id, "categoryId", e.target.value)}
+                                    style={styles.categoryMiniSelect}
+                                  >
+                                    <option value="">Sin categoría</option>
+                                    {data.categories.map((c) => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="number"
+                                    value={r.amount}
+                                    onChange={(e) => updateCartolaRow(r.id, "amount", e.target.value)}
+                                    style={{ ...styles.miniInput, width: 90, textAlign: "right" }}
+                                  />
+                                </div>
+                                {r.possibleDuplicate && (
+                                  <div style={styles.duplicateBadge}>
+                                    ⚠ Posible duplicado — ya registrado a mano el{" "}
+                                    {new Date(r.duplicateDate + "T00:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -1485,7 +1503,9 @@ const styles = {
   categoryBreakdownLabel: { width: 120, flexShrink: 0, color: "var(--ink)" },
   categoryBreakdownAmount: { width: 90, flexShrink: 0, textAlign: "right", fontWeight: 600, color: "var(--ink)" },
   categoryRow: { display: "flex", alignItems: "center", gap: 8, padding: "6px 6px", borderRadius: 6, marginBottom: 4 },
-  cartolaRow: { display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderBottom: "1px solid var(--rule)", fontSize: 12.5 },
+  cartolaRowOuter: { padding: "6px 8px", borderBottom: "1px solid var(--rule)" },
+  cartolaRow: { display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 },
+  duplicateBadge: { marginTop: 4, marginLeft: 26, fontSize: 11, color: "var(--coral)", fontWeight: 600 },
   expenseTotalRow: { display: "flex", justifyContent: "space-between", borderTop: "1.5px solid var(--rule)", marginTop: 6, paddingTop: 8, fontWeight: 700, fontSize: 13.5, color: "var(--teal)" },
   compareRow: { display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--ink-2)", padding: "4px 0" },
   allocTable: { display: "flex", flexDirection: "column", gap: 2 },
