@@ -414,6 +414,22 @@ export default function ControlHonorarios() {
     applyAccumulated(id, amount, selectedMonth);
     setDepositInput(id, "");
   };
+  // Overwrites (not adds to) what's logged as deposited this month — for fixing a typo,
+  // keeping the running "current" total consistent by the same delta.
+  const setMonthDeposit = (id, month, val) => {
+    const num = parseFloat(val);
+    const newVal = isNaN(num) || num < 0 ? 0 : num;
+    persist({
+      ...data,
+      goals: data.goals.map((g) => {
+        if (g.id !== id) return g;
+        const sentByMonth = { ...(g.sentByMonth || {}) };
+        const oldVal = sentByMonth[month] || 0;
+        sentByMonth[month] = newVal;
+        return { ...g, current: g.current + (newVal - oldVal), sentByMonth };
+      }),
+    });
+  };
 
   // ---------- derived: month scope ----------
   const months = useMemo(() => {
@@ -864,11 +880,17 @@ export default function ControlHonorarios() {
                   <div style={styles.goalAccumRow}>
                     <span>Meta de este mes: <strong>{money(accum)}</strong></span>
                   </div>
-                  {applied > 0 && (
-                    <div style={styles.goalAccumRow}>
-                      <span>Ya depositaste este mes: <strong style={{ color: "var(--green)" }}>{money(applied)}</strong></span>
-                    </div>
-                  )}
+                  <div style={styles.goalAccumRow}>
+                    <span>Ya depositaste este mes:</span>
+                    <input
+                      type="number"
+                      value={applied || ""}
+                      placeholder="0"
+                      onChange={(e) => setMonthDeposit(g.id, selectedMonth, e.target.value)}
+                      style={{ ...styles.miniInput, width: 110, textAlign: "right" }}
+                      title="Corrige aquí si te equivocaste al anotar un depósito"
+                    />
+                  </div>
                   <div style={styles.goalAccumRow}>
                     <span>
                       {pending > 0 ? (
