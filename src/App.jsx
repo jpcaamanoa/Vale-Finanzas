@@ -58,6 +58,15 @@ const monthLabel = (ym) => {
 const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
 const round = (n) => Math.round(n || 0);
 
+// Older saves stored one flat "amount" per fixed-business item, reused for every month.
+// Migrate those into byMonth (attributed to today's month) so each month can vary.
+const migrateFixedBusiness = (list) =>
+  (list || []).map((fx) => {
+    if (fx.byMonth) return fx;
+    const { amount, ...rest } = fx;
+    return { ...rest, byMonth: amount ? { [monthKey(todayISO())]: amount } : {} };
+  });
+
 const nextTransferInfo = (day) => {
   if (!day) return null;
   const today = new Date();
@@ -100,9 +109,9 @@ const DEFAULTS = {
     { id: "cat6", name: "Otros", keywords: [] },
   ],
   fixedBusiness: [
-    { id: "f1", name: "Publicidad Instagram", amount: 0 },
-    { id: "f2", name: "F29 SII", amount: 0 },
-  ],
+    { id: "f1", name: "Publicidad Instagram", byMonth: {} },
+    { id: "f2", name: "F29 SII", byMonth: {} },
+  ], // gastos de negocio que varían mes a mes: {id,name,byMonth:{"YYYY-MM":monto}}
   taxRate: 14.5,
   businessPct: 13.6,
   salaryPct: 25.3,
@@ -187,7 +196,8 @@ export default function ControlHonorarios() {
         const res = await window.storage.get(STORAGE_KEY, false);
         if (res && res.value) {
           const parsed = JSON.parse(res.value);
-          setData({ ...DEFAULTS, ...parsed });
+          const merged = { ...DEFAULTS, ...parsed };
+          setData({ ...merged, fixedBusiness: migrateFixedBusiness(merged.fixedBusiness) });
         }
       } catch (e) {
         // fresh start
@@ -308,8 +318,9 @@ export default function ControlHonorarios() {
     try {
       const parsed = JSON.parse(restoreInput.trim());
       if (!parsed || typeof parsed !== "object") throw new Error("Formato inválido");
-      setData({ ...DEFAULTS, ...parsed });
-      persist({ ...DEFAULTS, ...parsed });
+      const merged = { ...DEFAULTS, ...parsed, fixedBusiness: migrateFixedBusiness({ ...DEFAULTS, ...parsed }.fixedBusiness) };
+      setData(merged);
+      persist(merged);
       setRestoreMsg("Datos restaurados en pantalla (e intentando guardar).");
     } catch (e) {
       setRestoreMsg("Ese texto no es un respaldo válido. Revisa que lo hayas pegado completo.");
@@ -478,30 +489,42 @@ export default function ControlHonorarios() {
     if (!row) return;
     const name = (row.description || "").trim() || "Gasto de negocio";
     const amount = parseFloat(row.amount) || 0;
+    const month = row.date ? monthKey(row.date) : selectedMonth;
     const existing = data.fixedBusiness.find((fx) => fx.name.toLowerCase() === name.toLowerCase());
     if (existing) {
-      persist({ ...data, fixedBusiness: data.fixedBusiness.map((fx) => (fx.id === existing.id ? { ...fx, amount } : fx)) });
-      showToast(`Actualizado "${existing.name}" en Gastos fijos: ${money(amount)}`);
+      persist({
+        ...data,
+        fixedBusiness: data.fixedBusiness.map((fx) =>
+          fx.id === existing.id ? { ...fx, byMonth: { ...(fx.byMonth || {}), [month]: amount } } : fx
+        ),
+      });
+      showToast(`Actualizado "${existing.name}" en Gastos de negocio (${monthLabel(month)}): ${money(amount)}`);
     } else {
-      persist({ ...data, fixedBusiness: [...data.fixedBusiness, { id: `fx${Date.now()}`, name, amount }] });
-      showToast(`Enviado a Gastos fijos: ${name} — ${money(amount)}`);
+      persist({ ...data, fixedBusiness: [...data.fixedBusiness, { id: `fx${Date.now()}`, name, byMonth: { [month]: amount } }] });
+      showToast(`Enviado a Gastos de negocio (${monthLabel(month)}): ${name} — ${money(amount)}`);
     }
     setCartolaRows((rows) => rows.filter((r) => r.id !== id));
   };
 
   // ---------- fixed business ----------
   const addFixed = () => {
+    if (!xName.trim()) return;
     const amt = parseFloat(xAmount);
-    if ((!amt && amt !== 0) || !xName.trim()) return;
-    persist({ ...data, fixedBusiness: [...data.fixedBusiness, { id: `fx${Date.now()}`, name: xName.trim(), amount: amt }] });
+    const byMonth = isNaN(amt) ? {} : { [selectedMonth]: amt };
+    persist({ ...data, fixedBusiness: [...data.fixedBusiness, { id: `fx${Date.now()}`, name: xName.trim(), byMonth }] });
     setXName("");
     setXAmount("");
     setShowFixedForm(false);
   };
   const removeFixed = (id) => persist({ ...data, fixedBusiness: data.fixedBusiness.filter((e) => e.id !== id) });
-  const updateFixedAmount = (id, val) => {
+  const setFixedMonthAmount = (id, month, val) => {
     const amt = parseFloat(val);
-    persist({ ...data, fixedBusiness: data.fixedBusiness.map((e) => (e.id === id ? { ...e, amount: isNaN(amt) ? 0 : amt } : e)) });
+    persist({
+      ...data,
+      fixedBusiness: data.fixedBusiness.map((e) =>
+        e.id === id ? { ...e, byMonth: { ...(e.byMonth || {}), [month]: isNaN(amt) ? 0 : amt } } : e
+      ),
+    });
   };
 
   const setTaxRate = (val) => persist({ ...data, taxRate: parseFloat(val) || 0 });
@@ -614,8 +637,12 @@ export default function ControlHonorarios() {
     });
     return Array.from(byCat.values()).sort((a, b) => b.total - a.total);
   }, [monthMiscExpenses, data.categories]);
-  const fixedTotal = useMemo(() => data.fixedBusiness.reduce((s, e) => s + e.amount, 0), [data.fixedBusiness]);
-  const actualBusiness = boxTotal + fixedTotal;
+  const monthFixedTotal = useMemo(
+    () => data.fixedBusiness.reduce((s, e) => s + (e.byMonth?.[selectedMonth] || 0), 0),
+    [data.fixedBusiness, selectedMonth]
+  );
+  const actualBusiness = boxTotal + monthFixedTotal;
+  const realProfit = monthTotal - actualBusiness;
 
   const businessAccum = (afterTax * (data.businessPct || 0)) / 100;
   const salaryAccum = (afterTax * (data.salaryPct || 0)) / 100;
@@ -668,6 +695,7 @@ export default function ControlHonorarios() {
 
   // ---------- export ----------
   const safeSheetName = (name) => name.replace(/[:\\/?*[\]]/g, "-").slice(0, 31);
+  const fixedTotalFor = (m) => (data.fixedBusiness || []).reduce((s, e) => s + (e.byMonth?.[m] || 0), 0);
 
   const buildMonthSheetAOA = (m) => {
     const sessionsM = data.entries.filter((e) => monthKey(e.date) === m).sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -726,7 +754,8 @@ export default function ControlHonorarios() {
     rows.push([`Impuestos (${data.taxRate}%)`, round(taxM)]);
     rows.push(["Después de impuestos", round(afterTaxM)]);
     rows.push([`Negocio — calculado (${data.businessPct}%)`, round(businessAccumM)]);
-    rows.push(["Negocio — real (box + fijos)", round(boxTotalM + fixedTotal)]);
+    rows.push(["Negocio — real (box + gastos de negocio)", round(boxTotalM + fixedTotalFor(m))]);
+    rows.push(["Ganancia real (ingresos - box - gastos de negocio)", round(totalM - boxTotalM - fixedTotalFor(m))]);
     rows.push([`Sueldo — calculado (${data.salaryPct}%)`, round(salaryAccumM)]);
     rows.push(["Sueldo — gastado (otros gastos)", round(miscTotalM)]);
     rows.push([`Margen / colchón (${data.marginPct}%)`, round(marginAccumM)]);
@@ -756,6 +785,7 @@ export default function ControlHonorarios() {
       const tax = (total * (data.taxRate || 0)) / 100;
       const at = total - tax;
       const boxM = data.boxLog.filter((e) => monthKey(e.date) === m).reduce((s, e) => s + e.amount, 0);
+      const fixedM = fixedTotalFor(m);
       return {
         Mes: monthLabel(m),
         "Ingresos sesiones": sessionsM,
@@ -763,7 +793,8 @@ export default function ControlHonorarios() {
         Ingresos: total,
         Impuestos: round(tax),
         "Negocio (%calc)": round((at * data.businessPct) / 100),
-        "Negocio real (box+fijos)": round(boxM + fixedTotal),
+        "Negocio real (box+gastos)": round(boxM + fixedM),
+        "Ganancia real": round(total - boxM - fixedM),
         Sueldo: round((at * data.salaryPct) / 100),
         Margen: round((at * data.marginPct) / 100),
       };
@@ -899,6 +930,13 @@ export default function ControlHonorarios() {
         <SummaryCard icon={<TrendingUp size={16} />} label="Ingresos del mes" value={money(monthTotal)} accent="var(--teal)" />
         <SummaryCard icon={<PiggyBank size={16} />} label={`Impuestos (${data.taxRate}%)`} value={money(taxTotal)} accent="var(--gold)" />
         <SummaryCard icon={<Building2 size={16} />} label={`Negocio (${data.businessPct}%)`} value={money(businessAccum)} accent="var(--brown)" />
+        <SummaryCard
+          icon={<Wallet size={16} />}
+          label="Ganancia real (post box, SII, etc.)"
+          value={money(realProfit)}
+          accent={realProfit >= 0 ? "var(--green)" : "var(--coral)"}
+          big
+        />
         <SummaryCard icon={<Landmark size={16} />} label={`Sueldo (${data.salaryPct}%) · gastado ${money(miscTotal)}`} value={money(salaryAccum)} accent="var(--blue)" />
         <SummaryCard icon={<Target size={16} />} label="Metas (acumulado)" value={money(afterTax - businessAccum - salaryAccum - marginAccum)} accent="var(--green)" big />
       </div>
@@ -1190,7 +1228,7 @@ export default function ControlHonorarios() {
                                     </div>
                                   ) : <span />}
                                   <button type="button" onClick={() => sendCartolaRowToFixed(r.id)} style={styles.sendToFixedBtn}>
-                                    <Building2 size={11} /> Enviar a Gastos fijos de negocio
+                                    <Building2 size={11} /> Enviar a Gastos de negocio
                                   </button>
                                 </div>
                               </div>
@@ -1356,33 +1394,54 @@ export default function ControlHonorarios() {
 
                     <section style={styles.panel}>
                       <div style={styles.panelHeaderRow}>
-                        <h2 style={styles.h2}>Gastos fijos de negocio</h2>
+                        <h2 style={styles.h2}>Gastos de negocio</h2>
                         <button className="stamp-btn" onClick={() => setShowFixedForm((s) => !s)} style={styles.smallAddBtn} aria-label="Agregar gasto">
                           {showFixedForm ? <X size={15} /> : <Plus size={15} />}
                         </button>
                       </div>
+                      <p style={styles.helpText}>
+                        SII, publicidad y otros costos del negocio — el monto se guarda mes a mes, porque varía (no es un gasto fijo).
+                      </p>
                       {showFixedForm && (
                         <div style={styles.expenseForm}>
                           <input type="text" placeholder="Nombre" value={xName} onChange={(e) => setXName(e.target.value)} style={styles.input} />
-                          <input type="number" placeholder="Monto" value={xAmount} onChange={(e) => setXAmount(e.target.value)} style={{ ...styles.input, width: 100 }} />
+                          <input type="number" placeholder={`Monto en ${monthLabel(selectedMonth)}`} value={xAmount} onChange={(e) => setXAmount(e.target.value)} style={{ ...styles.input, width: 140 }} />
                           <button className="stamp-btn" onClick={addFixed} style={styles.addBtn}>Guardar</button>
                         </div>
                       )}
                       {data.fixedBusiness.map((exp) => (
                         <div key={exp.id} className="row-item" style={styles.expenseRow}>
                           <span style={styles.entryPatient}>{exp.name}</span>
-                          <input type="number" value={exp.amount} onChange={(e) => updateFixedAmount(exp.id, e.target.value)} style={styles.expenseInput} />
+                          <input
+                            type="number"
+                            value={exp.byMonth?.[selectedMonth] ?? ""}
+                            placeholder="0"
+                            onChange={(e) => setFixedMonthAmount(exp.id, selectedMonth, e.target.value)}
+                            style={styles.expenseInput}
+                          />
                           <button className="del-btn" onClick={() => removeFixed(exp.id)} style={styles.iconBtn} aria-label="Eliminar"><Trash2 size={14} /></button>
                         </div>
                       ))}
-                      <div style={styles.expenseTotalRow}><span>Total fijos</span><span>{money(fixedTotal)}</span></div>
+                      <div style={styles.expenseTotalRow}><span>Total gastos de negocio — {monthLabel(selectedMonth)}</span><span>{money(monthFixedTotal)}</span></div>
                     </section>
           </div>
           <div>
                     <section style={styles.panel}>
+                      <h2 style={styles.h2}>Ganancia real del mes</h2>
+                      <p style={styles.helpText}>Lo que ganaste de verdad después de pagar box, SII, publicidad y el resto de los gastos del negocio.</p>
+                      <div style={styles.compareRow}><span>Ingresos del mes</span><span>{money(monthTotal)}</span></div>
+                      <div style={styles.compareRow}><span>Box</span><span>−{money(boxTotal)}</span></div>
+                      <div style={styles.compareRow}><span>Gastos de negocio (SII, publicidad, etc.)</span><span>−{money(monthFixedTotal)}</span></div>
+                      <div style={{ ...styles.expenseTotalRow, color: realProfit >= 0 ? "var(--green)" : "var(--coral)" }}>
+                        <span>Ganancia real</span>
+                        <span>{money(realProfit)}</span>
+                      </div>
+                    </section>
+
+                    <section style={styles.panel}>
                       <h2 style={styles.h2}>Negocio: calculado vs. real</h2>
                       <div style={styles.compareRow}><span>Apartado por % este mes</span><span>{money(businessAccum)}</span></div>
-                      <div style={styles.compareRow}><span>Gasto real (box + fijos)</span><span>{money(actualBusiness)}</span></div>
+                      <div style={styles.compareRow}><span>Gasto real (box + gastos de negocio)</span><span>{money(actualBusiness)}</span></div>
                       <div style={{ ...styles.expenseTotalRow, color: businessAccum - actualBusiness >= 0 ? "var(--green)" : "var(--coral)" }}>
                         <span>{businessAccum - actualBusiness >= 0 ? "Te sobra" : "Te falta"}</span>
                         <span>{money(Math.abs(businessAccum - actualBusiness))}</span>
