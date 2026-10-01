@@ -115,7 +115,6 @@ const DEFAULTS = {
   taxRate: 14.5,
   businessPct: 13.6,
   salaryPct: 25.3,
-  marginPct: 5.6,
   bufferTarget: 0,
   transferDay: null, // day of month (1-31) chosen for the monthly Fintual transfer checkpoint
   goals: [
@@ -530,7 +529,6 @@ export default function ControlHonorarios() {
   const setTaxRate = (val) => persist({ ...data, taxRate: parseFloat(val) || 0 });
   const setBusinessPct = (val) => persist({ ...data, businessPct: parseFloat(val) || 0 });
   const setSalaryPct = (val) => persist({ ...data, salaryPct: parseFloat(val) || 0 });
-  const setMarginPct = (val) => persist({ ...data, marginPct: parseFloat(val) || 0 });
   const setBufferTarget = (val) => persist({ ...data, bufferTarget: parseFloat(val) || 0 });
   const setTransferDay = (val) => {
     const n = parseInt(val, 10);
@@ -646,9 +644,8 @@ export default function ControlHonorarios() {
 
   const businessAccum = (afterTax * (data.businessPct || 0)) / 100;
   const salaryAccum = (afterTax * (data.salaryPct || 0)) / 100;
-  const marginAccum = (afterTax * (data.marginPct || 0)) / 100;
   const goalsPctSum = useMemo(() => data.goals.reduce((s, g) => s + (g.pct || 0), 0), [data.goals]);
-  const totalPctSum = data.businessPct + data.salaryPct + data.marginPct + goalsPctSum;
+  const totalPctSum = data.businessPct + data.salaryPct + goalsPctSum;
   const pctOff = Math.abs(100 - totalPctSum) > 0.5;
   const transferInfo = useMemo(() => nextTransferInfo(data.transferDay), [data.transferDay]);
 
@@ -712,7 +709,6 @@ export default function ControlHonorarios() {
     const afterTaxM = totalM - taxM;
     const businessAccumM = (afterTaxM * (data.businessPct || 0)) / 100;
     const salaryAccumM = (afterTaxM * (data.salaryPct || 0)) / 100;
-    const marginAccumM = (afterTaxM * (data.marginPct || 0)) / 100;
 
     const rows = [];
     rows.push(["Ingresos (sesiones)"]);
@@ -758,7 +754,6 @@ export default function ControlHonorarios() {
     rows.push(["Ganancia real (ingresos - box - gastos de negocio)", round(totalM - boxTotalM - fixedTotalFor(m))]);
     rows.push([`Sueldo — calculado (${data.salaryPct}%)`, round(salaryAccumM)]);
     rows.push(["Sueldo — gastado (otros gastos)", round(miscTotalM)]);
-    rows.push([`Margen / colchón (${data.marginPct}%)`, round(marginAccumM)]);
     rows.push([]);
     rows.push(["Metas — acumulado este mes"]);
     rows.push(["Meta", "% reparto", "Acumulado este mes", "Ya transferido este mes", "Pendiente"]);
@@ -796,7 +791,6 @@ export default function ControlHonorarios() {
         "Negocio real (box+gastos)": round(boxM + fixedM),
         "Ganancia real": round(total - boxM - fixedM),
         Sueldo: round((at * data.salaryPct) / 100),
-        Margen: round((at * data.marginPct) / 100),
       };
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Resumen");
@@ -938,7 +932,7 @@ export default function ControlHonorarios() {
           big
         />
         <SummaryCard icon={<Landmark size={16} />} label={`Sueldo (${data.salaryPct}%) · gastado ${money(miscTotal)}`} value={money(salaryAccum)} accent="var(--blue)" />
-        <SummaryCard icon={<Target size={16} />} label="Metas (acumulado)" value={money(afterTax - businessAccum - salaryAccum - marginAccum)} accent="var(--green)" big />
+        <SummaryCard icon={<Target size={16} />} label="Metas (acumulado)" value={money(afterTax - businessAccum - salaryAccum)} accent="var(--green)" big />
       </div>
 
       <div style={styles.fintualBanner}>
@@ -960,7 +954,7 @@ export default function ControlHonorarios() {
       {pctOff && (
         <div style={styles.warnBanner}>
           <AlertTriangle size={14} strokeWidth={2} />
-          Tus porcentajes suman {totalPctSum.toFixed(1)}% en vez de 100%. Ajusta la tabla "Reparto automático" — está en la pestaña "Configuración" — ahí están negocio, sueldo, margen y cada meta juntos.
+          Tus porcentajes suman {totalPctSum.toFixed(1)}% en vez de 100%. Ajusta la tabla "Reparto automático" — está en la pestaña "Configuración" — ahí están negocio, sueldo y cada meta juntos.
         </div>
       )}
 
@@ -1457,7 +1451,7 @@ export default function ControlHonorarios() {
                     <section style={styles.panel}>
                       <h2 style={styles.h2}>Reparto automático — todo en un solo lugar</h2>
                       <p style={styles.helpText}>
-                        Impuestos sale del ingreso bruto. Todo lo demás (negocio, sueldo, margen, y cada meta) se reparte del ingreso después de impuestos — por eso deben sumar 100% entre todas las filas de abajo, ahorros incluidos.
+                        Impuestos sale del ingreso bruto. Todo lo demás (negocio, sueldo, y cada meta) se reparte del ingreso después de impuestos — por eso deben sumar 100% entre todas las filas de abajo, ahorros incluidos.
                       </p>
 
                       <div style={styles.allocTable}>
@@ -1473,10 +1467,6 @@ export default function ControlHonorarios() {
                         <div style={styles.allocRow}>
                           <span style={styles.allocLabel}>Sueldo</span>
                           <input type="number" step="0.1" value={data.salaryPct} onChange={(e) => setSalaryPct(e.target.value)} style={styles.allocInput} />
-                        </div>
-                        <div style={styles.allocRow}>
-                          <span style={styles.allocLabel}>Margen / colchón</span>
-                          <input type="number" step="0.1" value={data.marginPct} onChange={(e) => setMarginPct(e.target.value)} style={styles.allocInput} />
                         </div>
                         {data.goals.map((g) => (
                           <div key={g.id} style={styles.allocRow}>
